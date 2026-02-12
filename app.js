@@ -297,82 +297,194 @@ function seedMockData() {
 }
 
 /* ============================================================
-   SESSION STATE — active workout
+   SESSION STATE v2 — multi-timer, step-by-step flow
+   ============================================================
+   States:
+     'idle'        — nada activo
+     'config'      — configurando rutina
+     'preview'     — viendo preview del ejercicio
+     'set-running' — serie en ejecución
+     'rest'        — descanso entre series
    ============================================================ */
 const Session = {
+  // ── Workout-level data ──
   active: false,
-  startTime: null,
-  timerInterval: null,
-  exercises: [],   // [{ id, name, sets: [{id, weight, reps}] }]
+  workoutName: '',
   workoutType: '',
+  restSeconds: 90,
+  startTime: null,          // timestamp when timer actually started
+  workoutTimerInterval: null,
+  totalWorkoutSeconds: 0,
 
-  start() {
-    this.active = true;
-    this.startTime = Date.now();
-    this.exercises = [];
-    this.startTimer();
-  },
+  // ── Per-workout accumulators ──
+  completedExercises: [],   // exercises already finished
+  totalSeriesTime: 0,       // sum of seconds spent in sets
+  totalRestTime: 0,         // sum of seconds spent in rest
 
-  stop() {
+  // ── Active exercise ──
+  currentExercise: null,    // { id, name, muscle, sets:[{id,weight,reps,duration}] }
+  completedSets: [],        // sets done for current exercise
+
+  // ── Timers ──
+  setTimerInterval: null,
+  setStartTime: null,
+  restTimerInterval: null,
+  restRemaining: 0,
+  restTotal: 0,
+  nextWeight: 0,
+
+  // ── Reset completely ──
+  reset() {
+    this.stopAllTimers();
     this.active = false;
-    this.stopTimer();
-    return Math.floor((Date.now() - this.startTime) / 1000);
+    this.workoutName = '';
+    this.workoutType = '';
+    this.restSeconds = 90;
+    this.startTime = null;
+    this.totalWorkoutSeconds = 0;
+    this.completedExercises = [];
+    this.totalSeriesTime = 0;
+    this.totalRestTime = 0;
+    this.currentExercise = null;
+    this.completedSets = [];
+    this.nextWeight = 0;
   },
 
-  startTimer() {
-    const el = document.getElementById('session-timer');
-    this.timerInterval = setInterval(() => {
+  // ── Start the global workout clock (called on first set start) ──
+  startWorkoutTimer() {
+    if (this.workoutTimerInterval) return; // already running
+    this.startTime = this.startTime || Date.now();
+    this.workoutTimerInterval = setInterval(() => {
       const elapsed = Math.floor((Date.now() - this.startTime) / 1000);
       const m = Math.floor(elapsed / 60).toString().padStart(2,'0');
       const s = (elapsed % 60).toString().padStart(2,'0');
+      const el = document.getElementById('session-timer');
       if (el) el.textContent = `${m}:${s}`;
     }, 1000);
   },
 
-  stopTimer() {
-    if (this.timerInterval) {
-      clearInterval(this.timerInterval);
-      this.timerInterval = null;
+  stopWorkoutTimer() {
+    if (this.workoutTimerInterval) {
+      clearInterval(this.workoutTimerInterval);
+      this.workoutTimerInterval = null;
+    }
+    if (this.startTime) {
+      this.totalWorkoutSeconds = Math.floor((Date.now() - this.startTime) / 1000);
     }
   },
 
-  addExercise(name) {
-    const ex = { id: uid(), name, sets: [] };
-    this.exercises.push(ex);
-    return ex;
+  // ── Per-set timer ──
+  startSetTimer() {
+    this.setStartTime = Date.now();
+    const el = document.getElementById('set-running-timer');
+    this.setTimerInterval = setInterval(() => {
+      const secs = Math.floor((Date.now() - this.setStartTime) / 1000);
+      const m = Math.floor(secs / 60);
+      const s = (secs % 60).toString().padStart(2,'0');
+      if (el) el.textContent = `${m}:${s}`;
+    }, 1000);
   },
 
-  addSet(exerciseId) {
-    const ex = this.exercises.find(e => e.id === exerciseId);
-    if (!ex) return null;
-    const set = { id: uid(), weight: '', reps: '' };
-    ex.sets.push(set);
+  stopSetTimer() {
+    if (this.setTimerInterval) {
+      clearInterval(this.setTimerInterval);
+      this.setTimerInterval = null;
+    }
+    const duration = this.setStartTime
+      ? Math.floor((Date.now() - this.setStartTime) / 1000) : 0;
+    this.setStartTime = null;
+    return duration;
+  },
+
+  // ── Rest countdown timer ──
+  startRestTimer(onDone) {
+    this.restRemaining = this.restSeconds;
+    this.restTotal = this.restSeconds;
+    const countEl = document.getElementById('rest-countdown');
+    const barEl   = document.getElementById('rest-progress-bar');
+    if (countEl) countEl.textContent = this.restRemaining;
+    if (barEl)   barEl.style.width = '100%';
+
+    this.restTimerInterval = setInterval(() => {
+      this.restRemaining--;
+      this.totalRestTime++;
+      if (countEl) countEl.textContent = this.restRemaining;
+      const pct = (this.restRemaining / this.restTotal) * 100;
+      if (barEl) barEl.style.width = pct + '%';
+      if (this.restRemaining <= 0) {
+        this.stopRestTimer();
+        onDone();
+      }
+    }, 1000);
+  },
+
+  stopRestTimer() {
+    if (this.restTimerInterval) {
+      clearInterval(this.restTimerInterval);
+      this.restTimerInterval = null;
+    }
+  },
+
+  stopAllTimers() {
+    this.stopWorkoutTimer();
+    this.stopSetTimer();
+    this.stopRestTimer();
+  },
+
+  // ── Begin a new exercise ──
+  beginExercise(name, muscle) {
+    this.currentExercise = { id: uid(), name, muscle, sets: [] };
+    this.completedSets = [];
+    this.nextWeight = 0;
+  },
+
+  // ── Finish the current set, returns saved set object ──
+  finishSet(weight, reps) {
+    const duration = this.stopSetTimer();
+    this.totalSeriesTime += duration;
+    this.startWorkoutTimer(); // starts only if not already running
+
+    const set = {
+      id: uid(),
+      weight: String(weight),
+      reps: String(reps),
+      duration,
+    };
+    this.completedSets.push(set);
+    this.nextWeight = parseFloat(weight) || 0;
     return set;
   },
 
-  removeSet(exerciseId, setId) {
-    const ex = this.exercises.find(e => e.id === exerciseId);
-    if (!ex) return;
-    ex.sets = ex.sets.filter(s => s.id !== setId);
+  // ── Close current exercise and push to completedExercises ──
+  closeExercise() {
+    if (!this.currentExercise) return;
+    const ex = {
+      ...this.currentExercise,
+      sets: [...this.completedSets]
+    };
+    this.completedExercises.push(ex);
+    this.currentExercise = null;
+    this.completedSets = [];
+    return ex;
   },
 
-  removeExercise(exerciseId) {
-    this.exercises = this.exercises.filter(e => e.id !== exerciseId);
-  },
-
-  updateSet(exerciseId, setId, field, value) {
-    const ex = this.exercises.find(e => e.id === exerciseId);
-    if (!ex) return;
-    const set = ex.sets.find(s => s.id === setId);
-    if (set) set[field] = value;
-  },
-
-  getTotalVolume() {
-    return this.exercises.reduce((total, ex) => total + calcVolume(ex.sets), 0);
-  },
-
-  getTotalSets() {
-    return this.exercises.reduce((total, ex) => total + ex.sets.length, 0);
+  // ── Final workout totals ──
+  getTotals() {
+    this.stopAllTimers();
+    const allExercises = [...this.completedExercises];
+    const totalVolume  = allExercises.reduce((t, ex) => t + calcVolume(ex.sets), 0);
+    const totalSets    = allExercises.reduce((t, ex) => t + ex.sets.length, 0);
+    return {
+      name: this.workoutName || 'Entrenamiento',
+      type: this.workoutType,
+      duration: this.totalWorkoutSeconds,
+      exercises: allExercises,
+      totalVolume,
+      totalSets,
+      exerciseCount: allExercises.length,
+      seriesTime: this.totalSeriesTime,
+      restTime: this.totalRestTime,
+    };
   }
 };
 
@@ -685,6 +797,188 @@ function renderTrainHome() {
 }
 
 /* ============================================================
+   TRAIN CONFIG VIEW
+   ============================================================ */
+function renderConfigView() {
+  const typeContainer = document.getElementById('type-options');
+  if (typeContainer && typeContainer.childElementCount === 0) {
+    typeContainer.innerHTML = WORKOUT_TYPES.map((t, i) =>
+      `<button class="type-btn ${i === 0 ? 'active' : ''}" data-type="${t}">${t}</button>`
+    ).join('');
+
+    typeContainer.querySelectorAll('.type-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        typeContainer.querySelectorAll('.type-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        Session.workoutType = btn.dataset.type;
+      });
+    });
+
+    Session.workoutType = WORKOUT_TYPES[0];
+  }
+
+  document.querySelectorAll('.rest-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.rest-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      Session.restSeconds = parseInt(btn.dataset.secs);
+    });
+  });
+}
+
+/* ============================================================
+   RENDERER: ACTIVE SESSION
+   ============================================================ */
+function showExState(stateId) {
+  ['state-preview','state-set-running','state-rest'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('hidden', id !== stateId);
+  });
+}
+
+function renderExercisePreview(name, muscle) {
+  const INFO = {
+    'Press Banca':    { desc: 'Empuje horizontal de pecho. Controla la bajada en 2-3s y explota en la subida.', errors: 'Levantar la espalda del banco. No bajar la barra al pecho.' },
+    'Sentadilla':     { desc: 'Ejercicio rey del tren inferior. Mantén el torso erguido y rodillas alineadas con los pies.', errors: 'Rodillas hacia adentro (valgo). Talones levantados.' },
+    'Peso Muerto':    { desc: 'Tracción del suelo al hip. Espalda neutra en todo momento, barra pegada al cuerpo.', errors: 'Redondear la zona lumbar. Barra separada del cuerpo.' },
+    'Press Militar':  { desc: 'Empuje vertical de hombros. Core braceado, no arquees la zona lumbar.', errors: 'Arquear excesivamente la espalda. Codos muy abiertos.' },
+    'Dominadas':      { desc: 'Tracción vertical. Escápulas retraídas al inicio, pecho buscando la barra.', errors: 'Balanceo del cuerpo. No completar el rango de movimiento.' },
+    'Remo Barra':     { desc: 'Tracción horizontal de espalda. Torso a ~45°, codos cerca del cuerpo.', errors: 'Usar impulso del torso. Barra demasiado alta o baja.' },
+    'Hip Thrust':     { desc: 'Empuje de cadera. Espalda alta sobre el banco, contrae glúteos en el tope.', errors: 'Hiperextender la zona lumbar. No alcanzar extensión completa de cadera.' },
+    'default':        { desc: 'Mantén la técnica correcta durante todo el rango de movimiento. Controla el peso en todo momento.', errors: 'Usar peso excesivo sacrificando la técnica.' }
+  };
+
+  const info = INFO[name] || INFO['default'];
+  document.getElementById('active-ex-name').textContent = name;
+  document.getElementById('active-ex-muscle').textContent = muscle.toUpperCase();
+  document.getElementById('active-exercise-panel').classList.remove('hidden');
+
+  document.getElementById('ex-preview-body').innerHTML = `
+    <div class="ex-preview-muscle-row">
+      <span class="muscle-chip">💪 ${muscle}</span>
+    </div>
+    <div class="ex-preview-desc">${info.desc}</div>
+    <div class="ex-preview-errors">
+      <strong>⚠ Errores comunes</strong>
+      ${info.errors}
+    </div>`;
+
+  showExState('state-preview');
+  renderCompletedSets();
+}
+
+function renderCompletedSets() {
+  const sets   = Session.completedSets;
+  const prs    = DataStore.getPRs();
+  const titleEl = document.getElementById('completed-sets-title');
+  const listEl  = document.getElementById('completed-sets-list');
+  if (!titleEl || !listEl) return;
+
+  if (sets.length === 0) { titleEl.textContent = ''; listEl.innerHTML = ''; return; }
+
+  titleEl.textContent = `${sets.length} serie${sets.length > 1 ? 's' : ''} completada${sets.length > 1 ? 's' : ''}`;
+  const exName = Session.currentExercise?.name || '';
+  listEl.innerHTML = sets.map((s, i) => {
+    const isPR = parseFloat(s.weight) > 0 && detectPR(exName, s.weight, prs);
+    const vol  = Math.round(parseFloat(s.weight) * parseInt(s.reps));
+    return `
+      <div class="done-set-row">
+        <div class="done-set-num ${isPR ? 'pr-set' : ''}">${isPR ? '👑' : i+1}</div>
+        <div class="done-set-info">${s.weight}kg × ${s.reps} reps</div>
+        <div class="done-set-time">⏱ ${fmtDuration(s.duration)}</div>
+        <div class="done-set-vol">${vol > 0 ? vol + 'kg' : ''}</div>
+      </div>`;
+  }).join('');
+}
+
+function renderCompletedExercises() {
+  const listEl = document.getElementById('completed-exercises-list');
+  if (!listEl) return;
+  listEl.innerHTML = Session.completedExercises.map(ex => {
+    const vol = calcVolume(ex.sets);
+    return `
+      <div class="completed-ex-row">
+        <div>
+          <div class="completed-ex-row-name">${ex.name}</div>
+          <div class="completed-ex-row-meta">${ex.sets.length} series · ${fmtDuration(ex.sets.reduce((t,s)=>t+(s.duration||0),0))} activo</div>
+        </div>
+        <div class="completed-ex-row-vol">${fmtVolume(vol)}</div>
+      </div>`;
+  }).join('');
+}
+
+function beginNextSet() {
+  const setNumber = Session.completedSets.length + 1;
+  const badge = document.getElementById('set-running-badge');
+  if (badge) badge.textContent = `SERIE ${setNumber}`;
+
+  const weightInput = document.getElementById('set-weight-input');
+  const repsInput   = document.getElementById('set-reps-input');
+  if (weightInput) weightInput.value = Session.nextWeight > 0 ? Session.nextWeight : '';
+  if (repsInput)   repsInput.value = '';
+
+  const timerEl = document.getElementById('set-running-timer');
+  if (timerEl) timerEl.textContent = '0:00';
+
+  showExState('state-set-running');
+  Session.startSetTimer();
+
+  setTimeout(() => {
+    if (weightInput && !weightInput.value) weightInput.focus();
+    else if (repsInput) repsInput.focus();
+  }, 80);
+}
+
+function handleFinishSet() {
+  const weight = parseFloat(document.getElementById('set-weight-input').value) || 0;
+  const reps   = parseInt(document.getElementById('set-reps-input').value) || 0;
+
+  if (weight === 0 && reps === 0) {
+    showToast('Registra al menos peso o repeticiones ✋');
+    return;
+  }
+
+  const set = Session.finishSet(weight, reps);
+
+  const lastSetEl = document.getElementById('rest-last-set');
+  if (lastSetEl) {
+    lastSetEl.textContent = `Serie ${Session.completedSets.length} completada: ${weight}kg × ${reps} reps · ${fmtDuration(set.duration)}`;
+  }
+
+  document.getElementById('rest-weight-val').textContent = weight;
+  Session.nextWeight = weight;
+
+  showExState('state-rest');
+  renderCompletedSets();
+
+  Session.startRestTimer(() => {
+    showToast('¡Descanso terminado! A por la siguiente serie 💪');
+    beginNextSet();
+  });
+}
+
+function handleSkipRest() {
+  const elapsed = Session.restTotal - Session.restRemaining;
+  Session.totalRestTime += elapsed;
+  Session.stopRestTimer();
+  beginNextSet();
+}
+
+function handleFinishExercise() {
+  if (Session.completedSets.length === 0) {
+    showToast('Completa al menos una serie antes de finalizar ✋');
+    return;
+  }
+  Session.stopSetTimer();
+  Session.stopRestTimer();
+  const ex = Session.closeExercise();
+  renderCompletedExercises();
+  document.getElementById('active-exercise-panel').classList.add('hidden');
+  showExState('state-preview');
+  showToast(`${ex.name} completado — ${fmtVolume(calcVolume(ex.sets))} 🔥`);
+}
+
+/* ============================================================
    RENDERER: SESSION (ACTIVE WORKOUT)
    ============================================================ */
 function renderSession() {
@@ -787,11 +1081,9 @@ function updateExerciseVolume(exerciseId) {
    ============================================================ */
 function renderSummary(workout) {
   document.getElementById('summary-name').textContent = workout.name;
-  document.getElementById('summary-duration').textContent = `Duración: ${fmtDuration(workout.duration)}`;
+  document.getElementById('summary-duration').textContent = `Duración total: ${fmtDuration(workout.duration)}`;
 
-  // Stats grid
-  const statsGrid = document.getElementById('summary-stats-grid');
-  statsGrid.innerHTML = `
+  document.getElementById('summary-stats-grid').innerHTML = `
     <div class="summary-stat-card accent">
       <div class="summary-stat-value orange">${fmtVolume(workout.totalVolume)}</div>
       <div class="summary-stat-label">Volumen total</div>
@@ -809,29 +1101,37 @@ function renderSummary(workout) {
       <div class="summary-stat-label">PRs nuevos 👑</div>
     </div>`;
 
-  // PRs
-  const prsEl = document.getElementById('summary-prs');
-  if (workout.prs.length > 0) {
-    prsEl.innerHTML = `
-      <div class="summary-prs-title">👑 PERSONAL RECORDS NUEVOS</div>
-      ${workout.prs.map(pr => `
-        <div class="summary-pr-item">
-          <span class="pr-icon">🏆</span>
-          <span class="pr-text">${pr.exercise} — ${pr.weight}kg (nuevo máximo)</span>
-        </div>`).join('')}`;
-  } else {
-    prsEl.innerHTML = '';
-  }
+  document.getElementById('summary-time-breakdown').innerHTML = `
+    <div style="font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--text-secondary);padding-bottom:8px;">⏱ DESGLOSE DE TIEMPO</div>
+    <div class="time-breakdown-row">
+      <div class="tbd-label"><div class="tbd-dot" style="background:var(--accent-green)"></div>Tiempo en series</div>
+      <div class="tbd-val">${fmtDuration(workout.seriesTime || 0)}</div>
+    </div>
+    <div class="time-breakdown-row">
+      <div class="tbd-label"><div class="tbd-dot" style="background:var(--accent-orange)"></div>Tiempo en descanso</div>
+      <div class="tbd-val">${fmtDuration(workout.restTime || 0)}</div>
+    </div>
+    <div class="time-breakdown-row">
+      <div class="tbd-label"><div class="tbd-dot" style="background:var(--accent-blue)"></div>Total entrenamiento</div>
+      <div class="tbd-val">${fmtDuration(workout.duration)}</div>
+    </div>`;
 
-  // Exercises detail
-  const exEl = document.getElementById('summary-exercises');
-  exEl.innerHTML = `
+  const prsEl = document.getElementById('summary-prs');
+  prsEl.innerHTML = workout.prs.length > 0 ? `
+    <div class="summary-prs-title">👑 PERSONAL RECORDS NUEVOS</div>
+    ${workout.prs.map(pr => `
+      <div class="summary-pr-item">
+        <span class="pr-icon">🏆</span>
+        <span class="pr-text">${pr.exercise} — ${pr.weight}kg (nuevo máximo)</span>
+      </div>`).join('')}` : '';
+
+  document.getElementById('summary-exercises').innerHTML = `
     <div style="padding:0 0 10px;font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--text-secondary);">EJERCICIOS</div>
     ${workout.exercises.map(ex => `
       <div class="summary-exercise-item">
         <div>
           <div class="summary-exercise-name">${ex.name}</div>
-          <div class="summary-exercise-sets">${ex.sets.length} series</div>
+          <div class="summary-exercise-sets">${ex.sets.length} series · ${fmtDuration(ex.sets.reduce((t,s)=>t+(s.duration||0),0))} activo</div>
         </div>
         <div class="summary-exercise-vol">${fmtVolume(calcVolume(ex.sets))}</div>
       </div>`).join('')}`;
@@ -1241,75 +1541,45 @@ function renderProfile() {
 }
 
 /* ============================================================
-   WORKOUT: CREATE, SAVE, POST
+   WORKOUT: FINISH & SAVE
    ============================================================ */
 function finishWorkout() {
-  const name = document.getElementById('session-name').value.trim() || 'Entrenamiento';
-  const duration = Session.stop();
-
-  // Filter exercises with at least one valid set
-  const exercises = Session.exercises.map(ex => ({
-    ...ex,
-    sets: ex.sets.filter(s => (parseFloat(s.weight) > 0 || parseInt(s.reps) > 0))
-  })).filter(ex => ex.sets.length > 0);
-
-  if (exercises.length === 0) {
-    showToast('Agrega al menos un ejercicio con datos ✋');
-    Session.start(); // restart timer
+  if (Session.currentExercise && Session.completedSets.length > 0) {
+    Session.closeExercise();
+  }
+  if (Session.completedExercises.length === 0) {
+    showToast('Completa al menos un ejercicio antes de finalizar ✋');
     return;
   }
 
-  const totalVolume = exercises.reduce((t, ex) => t + calcVolume(ex.sets), 0);
-  const totalSets = exercises.reduce((t, ex) => t + ex.sets.length, 0);
-  const newPRs = updatePRs(exercises);
-
-  // Determine workout type
-  const type = WORKOUT_TYPES[Math.floor(Math.random() * WORKOUT_TYPES.length)];
+  const totals = Session.getTotals();
+  const newPRs = updatePRs(totals.exercises);
 
   const workout = {
-    id: uid(),
-    name,
-    date: new Date().toISOString(),
-    duration,
-    exercises,
-    totalVolume,
-    totalSets,
-    exerciseCount: exercises.length,
-    prs: newPRs,
-    type
+    id: uid(), name: totals.name, type: totals.type,
+    date: new Date().toISOString(), duration: totals.duration,
+    exercises: totals.exercises, totalVolume: totals.totalVolume,
+    totalSets: totals.totalSets, exerciseCount: totals.exerciseCount,
+    seriesTime: totals.seriesTime, restTime: totals.restTime, prs: newPRs,
   };
 
   DataStore.addWorkout(workout);
 
-  // Generate social post
   const user = DataStore.getUser();
-  const post = {
-    id: uid(),
-    userId: user.id,
-    username: user.username,
-    initials: user.initials,
-    avatarColor: user.avatarColor,
-    sessionName: name,
-    type,
-    totalVolume,
-    totalSets,
-    duration,
-    exerciseCount: exercises.length,
-    exercises,
-    prs: newPRs,
-    likes: 0,
-    likedBy: [],
-    comments: [],
+  DataStore.addPost({
+    id: uid(), userId: user.id, username: user.username,
+    initials: user.initials, avatarColor: user.avatarColor,
+    sessionName: totals.name, type: totals.type,
+    totalVolume: totals.totalVolume, totalSets: totals.totalSets,
+    duration: totals.duration, exerciseCount: totals.exerciseCount,
+    exercises: totals.exercises, prs: newPRs,
+    likes: 0, likedBy: [], comments: [],
     createdAt: new Date().toISOString()
-  };
+  });
 
-  DataStore.addPost(post);
-
-  // Show summary
   renderSummary(workout);
   showTrainView('train-summary');
 
-  // Update header
   const streak = calcStreak(DataStore.getWorkouts());
   document.getElementById('header-streak-count').textContent =
     streak.filter(d => d.done).length;
@@ -1334,37 +1604,82 @@ function renderExerciseSuggestions(query) {
     ? EXERCISE_DB.filter(e =>
         e.name.toLowerCase().includes(query.toLowerCase()) ||
         e.muscle.toLowerCase().includes(query.toLowerCase()))
-    : EXERCISE_DB.slice(0, 10);
+    : EXERCISE_DB.slice(0, 12);
 
   list.innerHTML = filtered.map(e => `
-    <button class="exercise-suggestion-item" data-name="${e.name}">
+    <button class="exercise-suggestion-item" data-name="${e.name}" data-muscle="${e.muscle}">
       ${e.name}
       <span class="suggestion-muscle">${e.muscle}</span>
     </button>`).join('');
 
   list.querySelectorAll('.exercise-suggestion-item').forEach(btn => {
     btn.addEventListener('click', () => {
-      addExerciseToSession(btn.dataset.name);
+      startExercise(btn.dataset.name, btn.dataset.muscle);
       Modal.close('modal-add-exercise');
     });
   });
 }
 
-function addExerciseToSession(name) {
-  const ex = Session.addExercise(name);
-  Session.addSet(ex.id); // add one set by default
-  renderSession();
-  showToast(`${name} agregado 💪`);
-}
-
 function confirmAddExercise() {
   const custom = document.getElementById('exercise-custom').value.trim();
   if (custom) {
-    addExerciseToSession(custom);
+    startExercise(custom, 'General');
     Modal.close('modal-add-exercise');
   } else {
     showToast('Selecciona un ejercicio o escribe uno ✋');
   }
+}
+
+function startExercise(name, muscle) {
+  if (Session.currentExercise && Session.completedSets.length > 0) {
+    Session.stopSetTimer();
+    Session.stopRestTimer();
+    Session.closeExercise();
+    renderCompletedExercises();
+  }
+  Session.beginExercise(name, muscle || 'General');
+  renderExercisePreview(name, muscle || 'General');
+  renderCompletedSets();
+
+  setTimeout(() => {
+    const panel = document.getElementById('active-exercise-panel');
+    if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 100);
+}
+
+/* ============================================================
+   EXERCISE DETAIL MODAL
+   ============================================================ */
+function openExerciseDetailModal(name, muscle) {
+  const FULL_INFO = {
+    'Press Banca': {
+      steps: ['Agarra la barra con agarre ligeramente más ancho que el hombro.','Desciende la barra al pecho inferior de forma controlada (2-3s).','Empuja explosivamente hasta extensión sin bloquear los codos.','Mantén los pies en el suelo y la espalda baja en contacto con el banco.'],
+      tips: 'Retrae las escápulas antes de descolgar la barra. La barra debe tocar o casi tocar el pecho en cada rep.'
+    },
+    'Sentadilla': {
+      steps: ['Barra en trapecio alto o bajo, pies a anchura de hombros.','Inicia el movimiento sacando las caderas hacia atrás.','Baja hasta paralelo o por debajo — rodillas alineadas con los pies.','Sube empujando el suelo, manteniendo el torso erguido.'],
+      tips: 'Braceado fuerte antes de bajar. Respira profundo y cierra el diafragma.'
+    },
+    'default': {
+      steps: ['Posición inicial: cuerpo estable, core activado.','Ejecuta el movimiento en el rango completo.','Controla la fase excéntrica (bajada).','Explota en la fase concéntrica (subida).'],
+      tips: 'Prioriza la técnica sobre el peso. La progresión correcta evita lesiones.'
+    }
+  };
+  const info = FULL_INFO[name] || FULL_INFO['default'];
+  document.getElementById('detail-modal-title').textContent = name;
+  document.getElementById('detail-modal-content').innerHTML = `
+    <div style="margin-bottom:12px;"><span class="muscle-chip">💪 ${muscle}</span></div>
+    <div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--text-secondary);margin-bottom:8px;">EJECUCIÓN</div>
+    ${info.steps.map((s, i) => `
+      <div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);">
+        <div style="width:22px;height:22px;border-radius:50%;background:var(--accent);color:white;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;flex-shrink:0;">${i+1}</div>
+        <div style="font-size:13px;color:var(--text-primary);line-height:1.5;">${s}</div>
+      </div>`).join('')}
+    <div style="margin-top:14px;background:rgba(255,214,0,0.06);border:1px solid rgba(255,214,0,0.2);border-radius:var(--radius-sm);padding:12px;">
+      <div style="font-size:10px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--pr-color);margin-bottom:5px;">💡 TIP PRO</div>
+      <div style="font-size:13px;color:var(--text-secondary);line-height:1.5;">${info.tips}</div>
+    </div>`;
+  Modal.open('modal-workout-detail');
 }
 
 /* ============================================================
@@ -1395,47 +1710,105 @@ function init() {
   });
 
   // ---- TRAIN ----
+  // 1. Home → Config
   document.getElementById('btn-start-workout').addEventListener('click', () => {
-    Session.start();
-    document.getElementById('session-name').value = '';
-    renderSession();
-    showTrainView('train-session');
+    Session.reset();
+    document.getElementById('config-name').value = '';
+    document.getElementById('session-timer').textContent = '00:00';
+    renderConfigView();
+    showTrainView('train-config');
+    setTimeout(() => document.getElementById('config-name').focus(), 100);
   });
 
+  // 2. Config back
+  document.getElementById('btn-back-config').addEventListener('click', () => {
+    showTrainView('train-home');
+  });
+
+  // 3. Config → Session
+  document.getElementById('btn-config-continue').addEventListener('click', () => {
+    const name = document.getElementById('config-name').value.trim() || 'Entrenamiento';
+    Session.workoutName = name;
+    document.getElementById('session-name-display').textContent = name;
+    document.getElementById('active-exercise-panel').classList.add('hidden');
+    document.getElementById('completed-exercises-list').innerHTML = '';
+    showTrainView('train-session');
+    openAddExerciseModal();
+  });
+
+  // 4. Session back
   document.getElementById('btn-back-session').addEventListener('click', () => {
     if (confirm('¿Cancelar el entrenamiento? Se perderán los datos.')) {
-      Session.stop();
+      Session.reset();
       showTrainView('train-home');
       renderTrainHome();
     }
   });
 
-  document.getElementById('btn-add-exercise').addEventListener('click', openAddExerciseModal);
+  // 5. Finish set
+  document.getElementById('btn-finish-set').addEventListener('click', handleFinishSet);
 
+  // 6. Skip rest
+  document.getElementById('btn-skip-rest').addEventListener('click', handleSkipRest);
+
+  // 7. Rest weight controls
+  document.getElementById('rest-weight-minus').addEventListener('click', () => {
+    const val = Math.max(0, (parseFloat(document.getElementById('rest-weight-val').textContent) || 0) - 2.5);
+    document.getElementById('rest-weight-val').textContent = val;
+    Session.nextWeight = val;
+  });
+  document.getElementById('rest-weight-plus').addEventListener('click', () => {
+    const val = (parseFloat(document.getElementById('rest-weight-val').textContent) || 0) + 2.5;
+    document.getElementById('rest-weight-val').textContent = val;
+    Session.nextWeight = val;
+  });
+
+  // 8. Finish exercise
+  document.getElementById('btn-finish-exercise').addEventListener('click', handleFinishExercise);
+
+  // 9. Add exercise (mid-session)
+  document.getElementById('btn-add-exercise').addEventListener('click', () => {
+    if (Session.currentExercise && Session.completedSets.length === 0) {
+      showToast('Completa al menos una serie del ejercicio actual ✋');
+      return;
+    }
+    openAddExerciseModal();
+  });
+
+  // 10. Finish workout
   document.getElementById('btn-finish-workout').addEventListener('click', finishWorkout);
 
+  // 11. Start first set from preview
+  document.getElementById('btn-start-set').addEventListener('click', () => {
+    Session.startWorkoutTimer();
+    beginNextSet();
+  });
+
+  // 12. See full exercise explanation
+  document.getElementById('btn-see-full').addEventListener('click', () => {
+    openExerciseDetailModal(
+      Session.currentExercise?.name   || '',
+      Session.currentExercise?.muscle || ''
+    );
+  });
+
+  // 13. Summary → Feed
   document.getElementById('btn-to-feed').addEventListener('click', () => {
     showTrainView('train-home');
     Nav.goto('feed');
   });
 
-  // ---- MODALS ----
+  // ── MODALS ──
   document.getElementById('modal-close-exercise').addEventListener('click', () =>
     Modal.close('modal-add-exercise'));
-
   document.getElementById('exercise-search').addEventListener('input', (e) =>
     renderExerciseSuggestions(e.target.value));
-
   document.getElementById('btn-confirm-exercise').addEventListener('click', confirmAddExercise);
-
   document.getElementById('modal-close-detail').addEventListener('click', () =>
     Modal.close('modal-workout-detail'));
-
   document.getElementById('modal-close-comments').addEventListener('click', () =>
     Modal.close('modal-comments'));
-
   document.getElementById('btn-send-comment').addEventListener('click', handleSendComment);
-
   document.getElementById('comment-input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') handleSendComment();
   });

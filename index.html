@@ -68,21 +68,123 @@
           <div id="recent-workouts-list" class="recent-workouts-list"></div>
         </div>
 
-        <!-- Vista: Sesión activa -->
+        <!-- ── VISTA 2: Configuración previa ── -->
+        <div id="train-config" class="train-view">
+          <div class="session-header">
+            <button class="btn-back" id="btn-back-config">←</button>
+            <span class="session-header-title">Nueva Rutina</span>
+          </div>
+          <div class="config-body">
+            <div class="config-field">
+              <label class="config-label">Nombre de la rutina</label>
+              <input type="text" id="config-name" class="config-input" placeholder="Ej: Push Day, Piernas..." maxlength="40" />
+            </div>
+            <div class="config-field">
+              <label class="config-label">Descanso entre series</label>
+              <div class="rest-options" id="rest-options">
+                <button class="rest-btn" data-secs="60">60s</button>
+                <button class="rest-btn active" data-secs="90">90s</button>
+                <button class="rest-btn" data-secs="120">2m</button>
+                <button class="rest-btn" data-secs="180">3m</button>
+              </div>
+            </div>
+            <div class="config-field">
+              <label class="config-label">Tipo de entrenamiento</label>
+              <div id="type-options" class="type-options"></div>
+            </div>
+            <button class="btn-primary" id="btn-config-continue">
+              Agregar primer ejercicio →
+            </button>
+          </div>
+        </div>
+
+        <!-- ── VISTA 3: Sesión activa ── -->
         <div id="train-session" class="train-view">
           <div class="session-header">
             <button class="btn-back" id="btn-back-session">←</button>
             <div class="session-title-wrap">
-              <input type="text" id="session-name" class="session-name-input" placeholder="Nombre del entrenamiento..." maxlength="40" />
+              <span id="session-name-display" class="session-name-label"></span>
             </div>
             <div class="session-timer" id="session-timer">00:00</div>
           </div>
-          <div id="exercises-list" class="exercises-list"></div>
-          <button class="btn-add-exercise" id="btn-add-exercise">+ Agregar Ejercicio</button>
-          <button class="btn-finish-workout" id="btn-finish-workout">✓ Finalizar</button>
+
+          <!-- Panel del ejercicio activo -->
+          <div id="active-exercise-panel" class="active-ex-panel hidden">
+            <div class="active-ex-header">
+              <div>
+                <div id="active-ex-name" class="active-ex-name"></div>
+                <div id="active-ex-muscle" class="active-ex-muscle"></div>
+              </div>
+              <button class="btn-finish-exercise" id="btn-finish-exercise">Finalizar ejercicio</button>
+            </div>
+
+            <!-- Estado: preview -->
+            <div id="state-preview" class="ex-state">
+              <div id="ex-preview-body" class="ex-preview-body"></div>
+              <div class="preview-actions">
+                <button class="btn-outline" id="btn-see-full">📖 Ver explicación</button>
+                <button class="btn-primary" id="btn-start-set">▶ Iniciar Serie 1</button>
+              </div>
+            </div>
+
+            <!-- Estado: serie en curso -->
+            <div id="state-set-running" class="ex-state hidden">
+              <div class="set-running-header">
+                <div class="set-running-badge" id="set-running-badge">SERIE 1</div>
+                <div class="set-running-timer" id="set-running-timer">0:00</div>
+              </div>
+              <div class="set-running-inputs">
+                <div class="set-running-field">
+                  <label>PESO (kg)</label>
+                  <input type="number" id="set-weight-input" class="set-big-input" inputmode="decimal" placeholder="0" />
+                </div>
+                <div class="set-running-sep">×</div>
+                <div class="set-running-field">
+                  <label>REPS</label>
+                  <input type="number" id="set-reps-input" class="set-big-input" inputmode="numeric" placeholder="0" />
+                </div>
+              </div>
+              <button class="btn-finish-set" id="btn-finish-set">✓ Finalizar Serie</button>
+            </div>
+
+            <!-- Estado: descanso -->
+            <div id="state-rest" class="ex-state hidden">
+              <div class="rest-header">
+                <div class="rest-label">DESCANSO</div>
+                <div class="rest-countdown" id="rest-countdown">90</div>
+                <div class="rest-progress-wrap">
+                  <div class="rest-progress-bar" id="rest-progress-bar"></div>
+                </div>
+              </div>
+              <div class="rest-last-set" id="rest-last-set"></div>
+              <div class="rest-next-weight">
+                <div class="rest-next-label">Peso para la siguiente serie</div>
+                <div class="rest-weight-controls">
+                  <button class="rest-w-btn" id="rest-weight-minus">−</button>
+                  <span class="rest-weight-val" id="rest-weight-val">0</span>
+                  <span class="rest-weight-unit">kg</span>
+                  <button class="rest-w-btn" id="rest-weight-plus">+</button>
+                </div>
+              </div>
+              <button class="btn-skip-rest" id="btn-skip-rest">Omitir descanso →</button>
+            </div>
+
+            <!-- Sets completados -->
+            <div class="completed-sets-wrap">
+              <div class="completed-sets-title" id="completed-sets-title"></div>
+              <div id="completed-sets-list" class="completed-sets-list"></div>
+            </div>
+          </div>
+
+          <!-- Lista de ejercicios completados + botones de control -->
+          <div id="session-bottom" class="session-bottom">
+            <div id="completed-exercises-list" class="completed-ex-list"></div>
+            <button class="btn-add-exercise" id="btn-add-exercise">+ Agregar Ejercicio</button>
+            <button class="btn-finish-workout" id="btn-finish-workout">✓ Finalizar Entrenamiento</button>
+          </div>
         </div>
 
-        <!-- Vista: Resumen post-entrenamiento -->
+        <!-- ── VISTA 4: Resumen post-entrenamiento ── -->
         <div id="train-summary" class="train-view">
           <div class="summary-header">
             <div class="summary-badge">⚡ SESIÓN COMPLETADA</div>
@@ -91,8 +193,9 @@
           </div>
           <div class="summary-stats-grid" id="summary-stats-grid"></div>
           <div class="summary-prs" id="summary-prs"></div>
+          <div class="summary-time-breakdown" id="summary-time-breakdown"></div>
           <div class="summary-exercises" id="summary-exercises"></div>
-          <button class="btn-primary full-width" id="btn-to-feed">Ver en el Feed →</button>
+          <button class="btn-primary full-width" id="btn-to-feed" style="margin:0 18px 24px;width:calc(100% - 36px)">Ver en el Feed →</button>
         </div>
 
       </section>
