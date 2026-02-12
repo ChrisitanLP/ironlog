@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>IRONLOG</title>
+  <link rel="stylesheet" href="style.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+  <!-- ===== SPLASH SCREEN ===== -->
+  <div id="splash" class="splash">
+    <div class="splash-logo">
+      <span class="logo-icon">⚡</span>
+      <h1>IRONLOG</h1>
+      <p>Track. Compete. Dominate.</p>
+    </div>
+  </div>
+
+  <!-- ===== APP CONTAINER ===== -->
+  <div id="app" class="app hidden">
+
+    <!-- ===== HEADER ===== -->
+    <header class="app-header">
+      <div class="header-left">
+        <span class="header-logo">⚡ IRONLOG</span>
+      </div>
+      <div class="header-right">
+        <div class="header-streak">
+          <span class="streak-icon">🔥</span>
+          <span id="header-streak-count">0</span>
+        </div>
+        <div class="avatar-sm" id="header-avatar"></div>
+      </div>
+    </header>
+
+    <!-- ===== MAIN CONTENT AREA ===== -->
+    <main class="main-content">
+
+      <!-- ==============================
+           SECTION: FEED
+      ============================== -->
+      <section id="section-feed" class="section active">
+        <div class="section-header">
+          <h2>Feed</h2>
+          <span class="section-sub">Comunidad activa</span>
+        </div>
+        <div id="feed-container" class="feed-container"></div>
+      </section>
+
+      <!-- ==============================
+           SECTION: TRAIN
+      ============================== -->
+      <section id="section-train" class="section">
+
+        <!-- Vista: Home del entrenamiento -->
+        <div id="train-home" class="train-view active">
+          <div class="section-header">
+            <h2>Entrenar</h2>
+            <span class="section-sub">¿Listo para destruirte?</span>
+          </div>
+          <button class="btn-start-workout" id="btn-start-workout">
+            <span class="btn-icon">▶</span>
+            <span>Iniciar Entrenamiento</span>
+          </button>
+          <div class="recent-workouts-title">Últimas sesiones</div>
+          <div id="recent-workouts-list" class="recent-workouts-list"></div>
+        </div>
+
+        <!-- Vista: Sesión activa -->
+        <div id="train-session" class="train-view">
+          <div class="session-header">
+            <button class="btn-back" id="btn-back-session">←</button>
+            <div class="session-title-wrap">
+              <input type="text" id="session-name" class="session-name-input" placeholder="Nombre del entrenamiento..." maxlength="40" />
+            </div>
+            <div class="session-timer" id="session-timer">00:00</div>
+          </div>
+          <div id="exercises-list" class="exercises-list"></div>
+          <button class="btn-add-exercise" id="btn-add-exercise">+ Agregar Ejercicio</button>
+          <button class="btn-finish-workout" id="btn-finish-workout">✓ Finalizar</button>
+        </div>
+
+        <!-- Vista: Resumen post-entrenamiento -->
+        <div id="train-summary" class="train-view">
+          <div class="summary-header">
+            <div class="summary-badge">⚡ SESIÓN COMPLETADA</div>
+            <h2 id="summary-name"></h2>
+            <div class="summary-duration" id="summary-duration"></div>
+          </div>
+          <div class="summary-stats-grid" id="summary-stats-grid"></div>
+          <div class="summary-prs" id="summary-prs"></div>
+          <div class="summary-exercises" id="summary-exercises"></div>
+          <button class="btn-primary full-width" id="btn-to-feed">Ver en el Feed →</button>
+        </div>
+
+      </section>
+
+      <!-- ==============================
+           SECTION: STATS
+      ============================== -->
+      <section id="section-stats" class="section">
+        <div class="section-header">
+          <h2>Estadísticas</h2>
+          <span class="section-sub">Tu progreso real</span>
+        </div>
+        <div class="stats-content" id="stats-content"></div>
+      </section>
+
+      <!-- ==============================
+           SECTION: PROFILE
+      ============================== -->
+      <section id="section-profile" class="section">
+        <div id="profile-content"></div>
+      </section>
+
+    </main>
+
+    <!-- ===== BOTTOM NAVIGATION ===== -->
+    <nav class="bottom-nav">
+      <button class="nav-item active" data-section="feed">
+        <span class="nav-icon">🏠</span>
+        <span class="nav-label">Inicio</span>
+      </button>
+      <button class="nav-item" data-section="train">
+        <span class="nav-icon">💪</span>
+        <span class="nav-label">Entrenar</span>
+      </button>
+      <button class="nav-item" data-section="stats">
+        <span class="nav-icon">📈</span>
+        <span class="nav-label">Stats</span>
+      </button>
+      <button class="nav-item" data-section="profile">
+        <span class="nav-icon">👤</span>
+        <span class="nav-label">Perfil</span>
+      </button>
+    </nav>
+
+  </div>
+
+  <!-- ===== MODAL: ADD EXERCISE ===== -->
+  <div id="modal-add-exercise" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Agregar Ejercicio</h3>
+        <button class="modal-close" id="modal-close-exercise">✕</button>
+      </div>
+      <input type="text" id="exercise-search" class="modal-input" placeholder="Buscar ejercicio..." />
+      <div id="exercise-suggestions" class="exercise-suggestions"></div>
+      <input type="text" id="exercise-custom" class="modal-input" placeholder="O escribe uno personalizado..." />
+      <button class="btn-primary" id="btn-confirm-exercise">Agregar</button>
+    </div>
+  </div>
+
+  <!-- ===== MODAL: WORKOUT DETAIL ===== -->
+  <div id="modal-workout-detail" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-card modal-large">
+      <div class="modal-header">
+        <h3 id="detail-modal-title">Detalle</h3>
+        <button class="modal-close" id="modal-close-detail">✕</button>
+      </div>
+      <div id="detail-modal-content" class="detail-content"></div>
+    </div>
+  </div>
+
+  <!-- ===== MODAL: COMMENTS ===== -->
+  <div id="modal-comments" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Comentarios</h3>
+        <button class="modal-close" id="modal-close-comments">✕</button>
+      </div>
+      <div id="comments-list" class="comments-list"></div>
+      <div class="comment-input-wrap">
+        <input type="text" id="comment-input" class="modal-input" placeholder="Escribe un comentario..." />
+        <button class="btn-send" id="btn-send-comment">→</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== TOAST NOTIFICATION ===== -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
