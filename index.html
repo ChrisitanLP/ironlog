@@ -64,6 +64,10 @@
             <span class="btn-icon">▶</span>
             <span>Iniciar Entrenamiento</span>
           </button>
+          <button class="btn-view-templates" id="btn-view-templates">
+            <span class="btn-icon">⭐</span>
+            <span>Mis Plantillas</span>
+          </button>
           <div class="recent-workouts-title">Últimas sesiones</div>
           <div id="recent-workouts-list" class="recent-workouts-list"></div>
         </div>
@@ -92,9 +96,28 @@
               <label class="config-label">Tipo de entrenamiento</label>
               <div id="type-options" class="type-options"></div>
             </div>
-            <button class="btn-primary" id="btn-config-continue">
-              Agregar primer ejercicio →
-            </button>
+            <div class="config-field">
+              <label class="config-label">Modo de entrenamiento</label>
+              <div class="companion-toggle">
+                <input type="checkbox" id="companion-mode-check" class="toggle-check" />
+                <label for="companion-mode-check" class="toggle-label">
+                  <span class="toggle-icon">👥</span>
+                  <span>Entreno con compañero</span>
+                </label>
+              </div>
+              <div id="companion-name-input" class="companion-name-input hidden">
+                <input type="text" id="companion-name" class="config-input" 
+                      placeholder="Nombre del compañero" maxlength="30" />
+              </div>
+            </div>
+            <div class="config-actions">
+              <button class="btn-outline" id="btn-save-template-config" style="margin-bottom: 8px;">
+                💾 Guardar como plantilla vacía
+              </button>
+              <button class="btn-primary" id="btn-config-continue">
+                Agregar primer ejercicio →
+              </button>
+            </div>
           </div>
         </div>
 
@@ -131,19 +154,39 @@
             <div id="state-set-running" class="ex-state hidden">
               <div class="set-running-header">
                 <div class="set-running-badge" id="set-running-badge">SERIE 1</div>
+                <button class="btn-timer-control" id="btn-pause-set">⏸</button>
                 <div class="set-running-timer" id="set-running-timer">0:00</div>
               </div>
+              
+              <!-- Tipo de serie -->
+              <div class="set-type-selection">
+                <button class="set-type-btn" data-type="warmup" onclick="selectSetType('warmup')">
+                  🔥 Calentamiento
+                </button>
+                <button class="set-type-btn" data-type="approach" onclick="selectSetType('approach')">
+                  📊 Aproximación
+                </button>
+                <button class="set-type-btn active" data-type="effective" onclick="selectSetType('effective')">
+                  💪 Efectiva
+                </button>
+              </div>
+              
               <div class="set-running-inputs">
                 <div class="set-running-field">
                   <label>PESO (kg)</label>
-                  <input type="number" id="set-weight-input" class="set-big-input" inputmode="decimal" placeholder="0" />
+                  <input type="number" id="set-weight-input" class="set-big-input" 
+                        inputmode="decimal" placeholder="0" step="0.5" />
                 </div>
                 <div class="set-running-sep">×</div>
                 <div class="set-running-field">
                   <label>REPS</label>
-                  <input type="number" id="set-reps-input" class="set-big-input" inputmode="numeric" placeholder="0" />
+                  <input type="number" id="set-reps-input" class="set-big-input" 
+                        inputmode="numeric" placeholder="0" />
                 </div>
               </div>
+              
+              <div id="training-reminder" class="training-reminder hidden"></div>
+              
               <button class="btn-finish-set" id="btn-finish-set">✓ Finalizar Serie</button>
             </div>
 
@@ -156,7 +199,9 @@
                   <div class="rest-progress-bar" id="rest-progress-bar"></div>
                 </div>
               </div>
+              
               <div class="rest-last-set" id="rest-last-set"></div>
+              
               <div class="rest-next-weight">
                 <div class="rest-next-label">Peso para la siguiente serie</div>
                 <div class="rest-weight-controls">
@@ -166,7 +211,13 @@
                   <button class="rest-w-btn" id="rest-weight-plus">+</button>
                 </div>
               </div>
-              <button class="btn-skip-rest" id="btn-skip-rest">Omitir descanso →</button>
+              
+              <div class="rest-actions">
+                <button class="btn-pause-rest" id="btn-pause-rest">⏸ Pausar</button>
+                <button class="btn-skip-rest" id="btn-skip-rest">Omitir descanso →</button>
+              </div>
+              
+              <div id="training-reminder" class="training-reminder hidden"></div>
             </div>
 
             <!-- Sets completados -->
@@ -178,8 +229,14 @@
 
           <!-- Lista de ejercicios completados + botones de control -->
           <div id="session-bottom" class="session-bottom">
+            <!-- Botón de turno (solo visible si companionMode está activo) -->
+            <button class="btn-companion-turn hidden" id="btn-companion-turn">
+              ⏸ Turno de compañero
+            </button>
+            
             <div id="completed-exercises-list" class="completed-ex-list"></div>
             <button class="btn-add-exercise" id="btn-add-exercise">+ Agregar Ejercicio</button>
+            <button class="btn-save-template" id="btn-save-template">💾 Guardar como plantilla</button>
             <button class="btn-finish-workout" id="btn-finish-workout">✓ Finalizar Entrenamiento</button>
           </div>
         </div>
@@ -194,6 +251,22 @@
           <div class="summary-stats-grid" id="summary-stats-grid"></div>
           <div class="summary-prs" id="summary-prs"></div>
           <div class="summary-time-breakdown" id="summary-time-breakdown"></div>
+          <div class="summary-time-extended" id="summary-time-extended">
+            <div class="time-breakdown-row" style="padding: 0 18px;">
+              <div class="tbd-label">
+                <div class="tbd-dot" style="background:var(--accent)"></div>
+                Descanso omitido
+              </div>
+              <div class="tbd-val" id="summary-skipped-time"></div>
+            </div>
+            <div class="time-breakdown-row companion-wait-row hidden" style="padding: 0 18px;">
+              <div class="tbd-label">
+                <div class="tbd-dot" style="background:var(--accent-blue)"></div>
+                Esperando compañero
+              </div>
+              <div class="tbd-val" id="summary-companion-time"></div>
+            </div>
+          </div>
           <div class="summary-exercises" id="summary-exercises"></div>
           <button class="btn-primary full-width" id="btn-to-feed" style="margin:0 18px 24px;width:calc(100% - 36px)">Ver en el Feed →</button>
         </div>
@@ -254,6 +327,101 @@
       <div id="exercise-suggestions" class="exercise-suggestions"></div>
       <input type="text" id="exercise-custom" class="modal-input" placeholder="O escribe uno personalizado..." />
       <button class="btn-primary" id="btn-confirm-exercise">Agregar</button>
+    </div>
+  </div>
+
+  <!-- ===== MODAL: SELECCIÓN DE MODO DE ENTRENAMIENTO ===== -->
+  <div id="modal-workout-mode" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Iniciar Entrenamiento</h3>
+        <button class="modal-close" onclick="Modal.close('modal-workout-mode')">✕</button>
+      </div>
+      <div class="mode-selection">
+        <button class="mode-option" onclick="selectWorkoutMode('now')">
+          <div class="mode-icon">▶️</div>
+          <div class="mode-title">Usar ahora</div>
+          <div class="mode-desc">Empieza a entrenar inmediatamente</div>
+        </button>
+        <button class="mode-option" onclick="selectWorkoutMode('plan')">
+          <div class="mode-icon">📋</div>
+          <div class="mode-title">Planificar para después</div>
+          <div class="mode-desc">Crea una rutina para usar más tarde</div>
+        </button>
+        <button class="mode-option" onclick="renderTemplatesList(); Modal.close('modal-workout-mode'); Modal.open('modal-templates')">
+          <div class="mode-icon">⭐</div>
+          <div class="mode-title">Usar plantilla guardada</div>
+          <div class="mode-desc">Carga una rutina previamente creada</div>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MODAL: PLANTILLAS GUARDADAS ===== -->
+  <div id="modal-templates" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-card modal-large">
+      <div class="modal-header">
+        <h3>Mis Plantillas</h3>
+        <button class="modal-close" onclick="Modal.close('modal-templates')">✕</button>
+      </div>
+      <div id="templates-list" class="templates-list"></div>
+    </div>
+  </div>
+  
+  <!-- ===== MODAL: CONFIGURACIÓN DE EQUIPO ===== -->
+  <div id="modal-equipment-type" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Tipo de Equipo</h3>
+        <button class="modal-close" onclick="Modal.close('modal-equipment-type')">✕</button>
+      </div>
+      
+      <div class="equipment-selection">
+        <button class="equipment-option" data-type="machine" onclick="selectEquipmentType('machine')">
+          <div class="eq-icon">🔧</div>
+          <div class="eq-label">Máquina</div>
+        </button>
+        <button class="equipment-option" data-type="barbell" onclick="selectEquipmentType('barbell')">
+          <div class="eq-icon">🏋️</div>
+          <div class="eq-label">Barra Libre</div>
+        </button>
+        <button class="equipment-option" data-type="dumbbell" onclick="selectEquipmentType('dumbbell')">
+          <div class="eq-icon">💪</div>
+          <div class="eq-label">Mancuernas</div>
+        </button>
+      </div>
+      
+      <!-- Configuración de barra -->
+      <div id="barbell-config" class="barbell-config hidden">
+        <label class="config-label">Tipo de barra</label>
+        <div class="barbell-options">
+          <button class="barbell-option" onclick="selectBarbellType(0)">Olímpica (20kg)</button>
+          <button class="barbell-option" onclick="selectBarbellType(1)">EZ (10kg)</button>
+          <button class="barbell-option" onclick="selectBarbellType(2)">Hexagonal (25kg)</button>
+          <button class="barbell-option" onclick="selectBarbellType(3)">Fija (15kg)</button>
+          <button class="barbell-option" onclick="selectBarbellType(4)">Personalizada</button>
+        </div>
+        <div class="custom-barbell-weight">
+          <label class="config-label">Peso de la barra (kg)</label>
+          <input type="number" id="barbell-custom-weight" class="modal-input" 
+                placeholder="Peso en kg" inputmode="decimal" step="0.5" />
+        </div>
+      </div>
+      
+      <!-- Configuración de máquina -->
+      <div id="machine-config" class="machine-config hidden">
+        <div class="machine-note">
+          <div class="note-icon">⚠️</div>
+          <div class="note-text">
+            El peso en máquinas puede variar según el diseño. Registra el peso que muestres en la máquina.
+          </div>
+        </div>
+      </div>
+      
+      <button class="btn-primary" id="btn-confirm-equipment">Confirmar</button>
     </div>
   </div>
 

@@ -1539,3 +1539,753 @@ canvas { display: block; max-width: 100%; }
   font-family: var(--font-display); font-size: 17px; font-weight: 800;
   color: var(--text-primary);
 }
+
+
+/* ============ MODAL: SELECCIÓN DE MODO ============ */
+.mode-selection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mode-option {
+  background: var(--bg-input);
+  border: 2px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  text-align: left;
+  transition: all var(--transition);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.mode-option:hover {
+  border-color: var(--accent);
+  background: rgba(255,60,60,0.06);
+  transform: translateX(4px);
+}
+
+.mode-icon {
+  font-size: 32px;
+  flex-shrink: 0;
+}
+
+.mode-title {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin-bottom: 3px;
+}
+
+.mode-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+/* ============ PLANTILLAS ============ */
+.templates-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.template-card {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  transition: all var(--transition);
+}
+
+.template-card:hover {
+  border-color: var(--border-bright);
+  transform: translateX(2px);
+}
+
+.template-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.template-name {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.template-meta {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.btn-delete-template {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition);
+  flex-shrink: 0;
+}
+
+.btn-delete-template:hover {
+  background: var(--accent);
+  color: white;
+}
+
+.template-type-badge {
+  display: inline-block;
+  background: rgba(255,107,26,0.12);
+  border: 1px solid rgba(255,107,26,0.25);
+  color: var(--accent-orange);
+  border-radius: 20px;
+  padding: 3px 10px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  margin-bottom: 10px;
+}
+
+.btn-use-template {
+  width: 100%;
+  padding: 10px;
+  background: transparent;
+  border: 1px solid var(--border-bright);
+  border-radius: var(--radius-sm);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+  transition: all var(--transition);
+  letter-spacing: 0.5px;
+}
+
+.btn-use-template:hover {
+  background: rgba(255,60,60,0.08);
+  border-color: var(--accent);
+}
+
+.btn-view-templates {
+  margin: 0 18px 16px;
+  width: calc(100% - 36px);
+  background: var(--bg-card);
+  border: 2px solid var(--border-bright);
+  color: var(--text-primary);
+  border-radius: var(--radius-lg);
+  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  transition: all var(--transition);
+}
+
+.btn-view-templates:hover {
+  border-color: var(--accent-orange);
+  background: rgba(255,107,26,0.08);
+  color: var(--accent-orange);
+}
+
+/* ============ CONFIGURACIÓN DE EQUIPO ============ */
+.equipment-selection {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.equipment-option {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 8px;
+  background: var(--bg-input);
+  border: 2px solid var(--border);
+  border-radius: var(--radius-md);
+  transition: all var(--transition);
+}
+
+.equipment-option:hover {
+  border-color: var(--border-bright);
+}
+
+.equipment-option.active {
+  border-color: var(--accent);
+  background: rgba(255,60,60,0.08);
+}
+
+.eq-icon {
+  font-size: 28px;
+}
+
+.eq-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  letter-spacing: 0.5px;
+}
+
+.equipment-option.active .eq-label {
+  color: var(--accent);
+}
+
+.barbell-config,
+.machine-config {
+  margin-bottom: 16px;
+}
+
+.barbell-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.barbell-option {
+  padding: 10px 14px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  transition: all var(--transition);
+}
+
+.barbell-option:hover {
+  border-color: var(--border-bright);
+}
+
+.barbell-option.active {
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+  background: rgba(41,121,255,0.06);
+}
+
+.custom-barbell-weight {
+  margin-top: 10px;
+}
+
+.machine-note {
+  display: flex;
+  gap: 12px;
+  background: rgba(255,214,0,0.08);
+  border: 1px solid rgba(255,214,0,0.2);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+}
+
+.note-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.note-text {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.btn-equipment-config {
+  padding: 4px 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  transition: all var(--transition);
+  margin-left: auto;
+}
+
+.btn-equipment-config:hover {
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+}
+
+.current-equipment-label {
+  font-size: 12px;
+  color: var(--accent-orange);
+  font-weight: 600;
+  padding: 6px 0;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* ============ MODO COMPAÑERO ============ */
+.companion-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.companion-toggle:hover {
+  border-color: var(--border-bright);
+}
+
+.toggle-check {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+}
+
+.toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.toggle-icon {
+  font-size: 18px;
+}
+
+.companion-name-input {
+  margin-top: 10px;
+}
+
+.btn-companion-turn {
+  width: calc(100% - 36px);
+  margin: 8px 18px;
+  padding: 12px;
+  background: var(--bg-card);
+  border: 2px solid var(--border-bright);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  transition: all var(--transition);
+}
+
+.btn-companion-turn:hover {
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+}
+
+.btn-companion-turn.active {
+  background: rgba(41,121,255,0.12);
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+}
+
+/* ============ CONTROLES DE TIMER ============ */
+.btn-timer-control {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition);
+}
+
+.btn-timer-control:hover {
+  border-color: var(--accent-orange);
+  color: var(--accent-orange);
+}
+
+.btn-timer-control.resumed {
+  background: var(--accent-green);
+  border-color: var(--accent-green);
+  color: white;
+}
+
+.session-timer.paused {
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+
+/* ============ TIPO DE SERIE ============ */
+.set-type-selection {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.set-type-btn {
+  flex: 1;
+  padding: 7px 8px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-align: center;
+  transition: all var(--transition);
+}
+
+.set-type-btn:hover {
+  border-color: var(--border-bright);
+}
+
+.set-type-btn.active {
+  border-color: var(--accent);
+  background: rgba(255,60,60,0.1);
+  color: var(--accent);
+}
+
+.real-weight-note {
+  font-size: 10px;
+  color: var(--accent-blue);
+  font-weight: 500;
+  margin-left: 4px;
+}
+
+/* ============ RECORDATORIOS ============ */
+.training-reminder {
+  background: linear-gradient(135deg, rgba(255,214,0,0.1), rgba(255,107,26,0.1));
+  border: 1px solid rgba(255,214,0,0.25);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--pr-color);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  opacity: 0;
+  transform: translateY(-5px);
+  transition: all 0.3s ease;
+}
+
+.training-reminder.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.training-reminder.hidden {
+  display: none;
+}
+
+/* ============ ACCIONES DE DESCANSO ============ */
+.rest-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.btn-pause-rest {
+  flex: 1;
+  padding: 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-bright);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  transition: all var(--transition);
+}
+
+.btn-pause-rest:hover {
+  border-color: var(--accent-orange);
+  color: var(--accent-orange);
+}
+
+.btn-pause-rest.resumed {
+  background: var(--accent-green);
+  border-color: var(--accent-green);
+  color: white;
+}
+
+/* ============ ACCIONES DE CONFIG ============ */
+.config-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.btn-outline {
+  width: 100%;
+  padding: 12px 20px;
+  background: transparent;
+  border: 2px solid var(--border-bright);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  transition: all var(--transition);
+}
+
+.btn-outline:hover {
+  border-color: var(--accent-orange);
+  color: var(--accent-orange);
+  background: rgba(255,107,26,0.05);
+}
+
+.btn-save-template {
+  width: calc(100% - 36px);
+  margin: 4px 18px;
+  padding: 11px;
+  background: transparent;
+  border: 2px dashed var(--border-bright);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  transition: all var(--transition);
+  text-align: center;
+}
+
+.btn-save-template:hover {
+  border-color: var(--accent-orange);
+  color: var(--accent-orange);
+  background: rgba(255,107,26,0.05);
+}
+
+/* ============ RESUMEN EXTENDIDO ============ */
+.summary-time-extended {
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 14px;
+}
+
+.companion-wait-row.hidden {
+  display: none;
+}
+
+/* ============ RESPONSIVENESS ============ */
+@media (max-width: 380px) {
+  .set-type-selection {
+    flex-direction: column;
+  }
+  
+  .set-type-btn {
+    width: 100%;
+  }
+  
+  .equipment-selection {
+    flex-direction: column;
+  }
+}
+
+/* ============ ANIMACIONES ADICIONALES ============ */
+@keyframes reminder-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.02); }
+}
+
+.training-reminder.show {
+  animation: reminder-pulse 2s ease-in-out infinite;
+}
+
+/* ============ MEJORAS DE ACCESIBILIDAD ============ */
+.toggle-check:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.equipment-option:focus,
+.barbell-option:focus,
+.set-type-btn:focus {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
+/* ============ ESTADOS DE CARGA ============ */
+.loading-skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--bg-elevated) 0%,
+    var(--bg-input) 50%,
+    var(--bg-elevated) 100%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s ease-in-out infinite;
+}
+
+@keyframes skeleton-loading {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+
+/* ============ EQUIPMENT BADGES ============ */
+.equipment-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  margin-left: 6px;
+  margin-top: 3px;
+}
+
+.equipment-badge.barbell {
+  background: rgba(41,121,255,0.12);
+  border: 1px solid rgba(41,121,255,0.25);
+  color: var(--accent-blue);
+}
+
+.equipment-badge.dumbbell {
+  background: rgba(0,230,118,0.12);
+  border: 1px solid rgba(0,230,118,0.25);
+  color: var(--accent-green);
+}
+
+.equipment-badge.machine {
+  background: rgba(255,107,26,0.12);
+  border: 1px solid rgba(255,107,26,0.25);
+  color: var(--accent-orange);
+}
+
+/* ============ EQUIPMENT NOTE IN SETS ============ */
+.equipment-note {
+  font-size: 11px;
+  margin-left: 4px;
+  opacity: 0.7;
+}
+
+/* ============ DETAIL EQUIPMENT INFO ============ */
+.detail-equipment {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+  padding: 4px 8px;
+  background: var(--bg-elevated);
+  border-radius: var(--radius-sm);
+  display: inline-block;
+}
+
+/* ============ INPUT PLACEHOLDERS DINÁMICOS ============ */
+.set-big-input::placeholder {
+  font-size: 11px;
+  opacity: 0.5;
+}
+
+/* ============ BARBELL CONFIG IMPROVEMENTS ============ */
+.barbell-option {
+  position: relative;
+  transition: all var(--transition);
+}
+
+.barbell-option.active::before {
+  content: '✓';
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--accent-blue);
+  font-weight: 900;
+  font-size: 14px;
+}
+
+/* ============ EQUIPMENT SELECTION HOVER ============ */
+.equipment-option {
+  cursor: pointer;
+  position: relative;
+}
+
+.equipment-option.active::after {
+  content: '';
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 30px;
+  height: 3px;
+  background: var(--accent);
+  border-radius: 2px;
+}
+
+/* ============ CURRENT EQUIPMENT LABEL IMPROVEMENTS ============ */
+.current-equipment-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-blue);
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  background: rgba(41,121,255,0.08);
+  border: 1px solid rgba(41,121,255,0.2);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.current-equipment-label::before {
+  content: '⚙️';
+  font-size: 14px;
+}
+
+/* ============ BARBELL WEIGHT INPUT HIGHLIGHT ============ */
+#barbell-custom-weight:focus {
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 3px rgba(41,121,255,0.1);
+}
+
+#barbell-custom-weight:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ============ EQUIPMENT MODAL ANIMATIONS ============ */
+.barbell-config,
+.machine-config {
+  animation: slideDown 0.3s ease both;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ============ RESPONSIVE ============ */
+@media (max-width: 380px) {
+  .equipment-badge {
+    font-size: 9px;
+    padding: 2px 6px;
+  }
+  
+  .current-equipment-label {
+    font-size: 11px;
+    padding: 6px 10px;
+  }
+}

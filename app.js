@@ -25,6 +25,29 @@ const DEFAULT_USER = {
   joinedAt: new Date().toISOString(),
 };
 
+/** Tipos de serie */
+const SET_TYPES = {
+  WARMUP: 'warmup',
+  APPROACH: 'approach',
+  EFFECTIVE: 'effective'
+};
+
+/** Tipos de equipo */
+const EQUIPMENT_TYPES = {
+  MACHINE: 'machine',
+  BARBELL: 'barbell',
+  DUMBBELL: 'dumbbell'
+};
+
+/** Tipos de barra */
+const BARBELL_TYPES = [
+  { name: 'Barra Olímpica', weight: 20 },
+  { name: 'Barra EZ', weight: 10 },
+  { name: 'Barra Hexagonal', weight: 25 },
+  { name: 'Barra Fija', weight: 15 },
+  { name: 'Personalizada', weight: 0 }
+];
+
 /** Exercise database — muscle groups + common lifts */
 const EXERCISE_DB = [
   { name: 'Press Banca', muscle: 'Pecho' },
@@ -116,34 +139,72 @@ const DataStore = {
   }
 };
 
+const DataStoreExtensions = {
+  getTemplates()  { return this.get('templates') || []; },
+  saveTemplates(t) { return this.set('templates', t); },
+  
+  addTemplate(template) {
+    const templates = this.getTemplates();
+    templates.unshift(template);
+    this.saveTemplates(templates);
+  },
+  
+  deleteTemplate(id) {
+    const templates = this.getTemplates();
+    const filtered = templates.filter(t => t.id !== id);
+    this.saveTemplates(filtered);
+  },
+  
+  getTemplate(id) {
+    const templates = this.getTemplates();
+    return templates.find(t => t.id === id);
+  }
+};
+
+// Fusionar con DataStore existente:
+Object.assign(DataStore, DataStoreExtensions);
+
 /* ============================================================
    ENGINES
    ============================================================ */
 
 /** Calculate total volume (kg × reps × sets) */
-function calcVolume(sets) {
+function calcVolumeV2(sets) {
   return sets.reduce((acc, s) => {
-    const w = parseFloat(s.weight) || 0;
+    const w = parseFloat(s.realWeight || s.weight) || 0;
+    const r = parseInt(s.reps) || 0;
+    // Solo contar series efectivas para algunos cálculos
+    const isEffective = !s.setType || s.setType === SET_TYPES.EFFECTIVE;
+    return acc + (w * r);
+  }, 0);
+}
+
+function calcEffectiveVolume(sets) {
+  return sets.reduce((acc, s) => {
+    if (s.setType && s.setType !== SET_TYPES.EFFECTIVE) return acc;
+    const w = parseFloat(s.realWeight || s.weight) || 0;
     const r = parseInt(s.reps) || 0;
     return acc + (w * r);
   }, 0);
 }
 
 /** Detect PR: returns true if this weight is a new record for the exercise */
-function detectPR(exerciseName, weight, prs) {
+function detectPRV2(exerciseName, weight, prs, setType = SET_TYPES.EFFECTIVE) {
+  if (setType !== SET_TYPES.EFFECTIVE) return false;
   const key = exerciseName.toLowerCase().trim();
   const prev = prs[key] || 0;
   return parseFloat(weight) > prev;
 }
 
-/** Update PRs and return list of new ones */
-function updatePRs(exercises) {
+function updatePRsV2(exercises) {
   const prs = DataStore.getPRs();
   const newPRs = [];
 
   exercises.forEach(ex => {
     const key = ex.name.toLowerCase().trim();
-    const maxWeight = Math.max(...ex.sets.map(s => parseFloat(s.weight) || 0));
+    const effectiveSets = ex.sets.filter(s => !s.setType || s.setType === SET_TYPES.EFFECTIVE);
+    const maxWeight = Math.max(...effectiveSets.map(s => parseFloat(s.realWeight || s.weight) || 0));
+    
     if (maxWeight > 0 && maxWeight > (prs[key] || 0)) {
       prs[key] = maxWeight;
       newPRs.push({ exercise: ex.name, weight: maxWeight });
@@ -212,6 +273,241 @@ function fmtRelTime(isoStr) {
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).substr(2,5);
 }
+
+// Handler: Modo de uso (ahora / planificar)
+function handleWorkoutModeSelection() {
+  Modal.open('modal-workout-mode');
+}
+
+function selectWorkoutMode(mode) {
+  Session.reset();
+  Session.mode = mode;
+  Modal.close('modal-workout-mode');
+  
+  if (mode === 'plan') {
+    // Modo planificación - Solo estructura, sin timers
+    document.getElementById('config-name').value = '';
+    renderConfigViewV2();
+    showTrainView('train-config');
+    showToast('Modo planificación: crea tu rutina sin cronómetros activos 📋');
+    setTimeout(() => document.getElementById('config-name').focus(), 100);
+  } else {
+    // Modo "usar ahora" - Entrenamiento en tiempo real
+    document.getElementById('config-name').value = '';
+    document.getElementById('session-timer').textContent = '00:00';
+    renderConfigViewV2();
+    showTrainView('train-config');
+    setTimeout(() => document.getElementById('config-name').focus(), 100);
+  }
+}
+
+// Handler: Configurar modo compañero
+function handleCompanionToggle() {
+  const checkbox = document.getElementById('companion-mode-check');
+  const nameInput = document.getElementById('companion-name-input');
+  
+  if (checkbox && checkbox.checked) {
+    if (nameInput) nameInput.classList.remove('hidden');
+  } else {
+    if (nameInput) nameInput.classList.add('hidden');
+  }
+}
+
+function applyCompanionSettings() {
+  const checkbox = document.getElementById('companion-mode-check');
+  const nameInput = document.getElementById('companion-name');
+  
+  Session.companionMode = checkbox ? checkbox.checked : false;
+  Session.companionName = nameInput && checkbox.checked ? nameInput.value.trim() : '';
+}
+
+// Handler: Cambiar turno de compañero
+function toggleCompanionTurn() {
+  Session.setCompanionTurn(!Session.isCompanionTurn);
+  updateCompanionUI();
+}
+
+function updateCompanionUI() {
+  const btn = document.getElementById('btn-companion-turn');
+  if (!btn) return;
+  
+  if (Session.isCompanionTurn) {
+    btn.textContent = '👤 Es mi turno';
+    btn.classList.add('active');
+  } else {
+    btn.textContent = '⏸ Turno de compañero';
+    btn.classList.remove('active');
+  }
+}
+
+// Handler: Pausar/reanudar serie
+function toggleSetPause() {
+  if (Session.setIsPaused) {
+    Session.resumeSetTimer();
+  } else {
+    Session.pauseSetTimer();
+  }
+}
+
+// Handler: Pausar/reanudar descanso
+function toggleRestPause() {
+  if (Session.restIsPaused) {
+    Session.resumeRestTimer();
+  } else {
+    Session.pauseRestTimer();
+  }
+}
+
+// Handler: Abrir modal de tipo de equipo
+
+function openEquipmentModal() {
+  Modal.open('modal-equipment-type');
+  
+  // Pre-seleccionar el tipo actual
+  setTimeout(() => {
+    updateEquipmentUI();
+    
+    // Si es barra, mostrar config y pre-seleccionar
+    if (Session.equipmentType === EQUIPMENT_TYPES.BARBELL) {
+      document.getElementById('barbell-config').classList.remove('hidden');
+      
+      // Pre-seleccionar tipo de barra si ya está configurado
+      if (Session.barbellType) {
+        const barbellIndex = BARBELL_TYPES.findIndex(b => b.name === Session.barbellType);
+        if (barbellIndex !== -1) {
+          document.querySelectorAll('.barbell-option').forEach((btn, i) => {
+            btn.classList.toggle('active', i === barbellIndex);
+          });
+          
+          // Si es personalizada, habilitar input
+          if (barbellIndex === 4) {
+            document.getElementById('barbell-custom-weight').disabled = false;
+            document.getElementById('barbell-custom-weight').value = Session.barbellWeight || '';
+          } else {
+            document.getElementById('barbell-custom-weight').value = Session.barbellWeight || '';
+          }
+        }
+      }
+    } else {
+      document.getElementById('barbell-config').classList.add('hidden');
+    }
+    
+    // Si es máquina, mostrar config
+    if (Session.equipmentType === EQUIPMENT_TYPES.MACHINE) {
+      document.getElementById('machine-config').classList.remove('hidden');
+    } else {
+      document.getElementById('machine-config').classList.add('hidden');
+    }
+  }, 50);
+}
+
+// Handler: Seleccionar tipo de equipo
+function selectEquipmentType(type) {
+  Session.equipmentType = type;
+  
+  // Ocultar todas las configs primero
+  document.getElementById('barbell-config').classList.add('hidden');
+  document.getElementById('machine-config').classList.add('hidden');
+  
+  // Mostrar config específica
+  if (type === EQUIPMENT_TYPES.BARBELL) {
+    document.getElementById('barbell-config').classList.remove('hidden');
+    
+    // Si no hay barra configurada, pre-seleccionar Olímpica por defecto
+    if (!Session.barbellType) {
+      selectBarbellType(0); // Barra Olímpica por defecto
+    }
+  } else if (type === EQUIPMENT_TYPES.MACHINE) {
+    document.getElementById('machine-config').classList.remove('hidden');
+  } else if (type === EQUIPMENT_TYPES.DUMBBELL) {
+    // Mancuernas no necesita config adicional
+    Session.barbellType = null;
+    Session.barbellWeight = 0;
+  }
+  
+  updateEquipmentUI();
+}
+
+function updateEquipmentUI() {
+  document.querySelectorAll('.equipment-option').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.type === Session.equipmentType);
+  });
+}
+
+// Handler: Seleccionar tipo de barra
+function selectBarbellType(index) {
+  const barbell = BARBELL_TYPES[index];
+  Session.barbellType = barbell.name;
+  
+  const customWeightInput = document.getElementById('barbell-custom-weight');
+  
+  if (barbell.weight > 0) {
+    // Barra con peso predefinido
+    Session.barbellWeight = barbell.weight;
+    customWeightInput.value = barbell.weight;
+    customWeightInput.disabled = true;
+  } else {
+    // Barra personalizada
+    customWeightInput.disabled = false;
+    if (!customWeightInput.value) {
+      customWeightInput.value = Session.barbellWeight || '';
+      customWeightInput.focus();
+    }
+  }
+  
+  // Actualizar UI de botones
+  document.querySelectorAll('.barbell-option').forEach((btn, i) => {
+    btn.classList.toggle('active', i === index);
+  });
+}
+
+// Handler: Peso personalizado de barra
+function handleCustomBarbellWeight() {
+  const input = document.getElementById('barbell-custom-weight');
+  Session.barbellWeight = parseFloat(input.value) || 0;
+}
+
+// Handler: Confirmar tipo de equipo
+function confirmEquipmentType() {
+  // Validar que si es barra, tenga peso configurado
+  if (Session.equipmentType === EQUIPMENT_TYPES.BARBELL) {
+    if (!Session.barbellWeight || Session.barbellWeight <= 0) {
+      showToast('Configura el peso de la barra antes de continuar ✋');
+      return;
+    }
+  }
+  
+  Modal.close('modal-equipment-type');
+  
+  // Actualizar UI del ejercicio actual
+  updateCurrentEquipmentLabel();
+  
+  showToast('Equipo configurado correctamente ✓');
+}
+
+function updateCurrentEquipmentLabel() {
+  const equipmentLabel = document.getElementById('current-equipment-label');
+  if (!equipmentLabel) return;
+  
+  let text = '';
+  if (Session.equipmentType === EQUIPMENT_TYPES.BARBELL) {
+    text = `🏋️ ${Session.barbellType} (${Session.barbellWeight}kg)`;
+  } else if (Session.equipmentType === EQUIPMENT_TYPES.DUMBBELL) {
+    text = '🏋️ Mancuernas';
+  } else {
+    text = '🔧 Máquina';
+  }
+  
+  equipmentLabel.textContent = text;
+}
+
+// Handler: Seleccionar tipo de serie
+function selectSetType(type) {
+  document.querySelectorAll('.set-type-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.type === type);
+  });
+}
+
 
 /* ============================================================
    MOCK DATA GENERATOR — seed feed on first run
@@ -306,61 +602,126 @@ function seedMockData() {
      'set-running' — serie en ejecución
      'rest'        — descanso entre series
    ============================================================ */
-const Session = {
+
+const SessionV3 = {
   // ── Workout-level data ──
   active: false,
+  mode: 'now', // 'now' o 'plan'
   workoutName: '',
   workoutType: '',
   restSeconds: 90,
-  startTime: null,          // timestamp when timer actually started
+  startTime: null,
   workoutTimerInterval: null,
   totalWorkoutSeconds: 0,
+  isPaused: false,
+  pauseStartTime: null,
+  totalPausedTime: 0,
+
+  // ── Modo compañero ──
+  companionMode: false,
+  companionName: '',
+  isCompanionTurn: false,
+  companionWaitTime: 0,
 
   // ── Per-workout accumulators ──
-  completedExercises: [],   // exercises already finished
-  totalSeriesTime: 0,       // sum of seconds spent in sets
-  totalRestTime: 0,         // sum of seconds spent in rest
+  completedExercises: [],
+  totalSeriesTime: 0,
+  totalRestTime: 0,
+  totalSkippedRestTime: 0,
 
   // ── Active exercise ──
-  currentExercise: null,    // { id, name, muscle, sets:[{id,weight,reps,duration}] }
-  completedSets: [],        // sets done for current exercise
+  currentExercise: null,
+  completedSets: [],
+  equipmentType: null,
+  barbellType: null,
+  barbellWeight: 0,
+  machineLoadEstimate: 0,
 
   // ── Timers ──
   setTimerInterval: null,
   setStartTime: null,
+  setPausedTime: 0,
+  setIsPaused: false,
+  
   restTimerInterval: null,
   restRemaining: 0,
   restTotal: 0,
+  restIsPaused: false,
+  restPausedAt: null,
+  
   nextWeight: 0,
+  lastReminder: 0,
 
-  // ── Reset completely ──
+  // ── Reset ──
   reset() {
     this.stopAllTimers();
     this.active = false;
+    this.mode = 'now';
     this.workoutName = '';
     this.workoutType = '';
     this.restSeconds = 90;
     this.startTime = null;
     this.totalWorkoutSeconds = 0;
+    this.isPaused = false;
+    this.pauseStartTime = null;
+    this.totalPausedTime = 0;
+    
+    this.companionMode = false;
+    this.companionName = '';
+    this.isCompanionTurn = false;
+    this.companionWaitTime = 0;
+    
     this.completedExercises = [];
     this.totalSeriesTime = 0;
     this.totalRestTime = 0;
+    this.totalSkippedRestTime = 0;
+    
     this.currentExercise = null;
     this.completedSets = [];
+    this.equipmentType = null;
+    this.barbellType = null;
+    this.barbellWeight = 0;
+    this.machineLoadEstimate = 0;
+    
+    this.setPausedTime = 0;
+    this.setIsPaused = false;
     this.nextWeight = 0;
+    this.lastReminder = 0;
   },
 
-  // ── Start the global workout clock (called on first set start) ──
+  // ── Workout timer con pausa ──
   startWorkoutTimer() {
-    if (this.workoutTimerInterval) return; // already running
+    if (this.mode === 'plan') return;
+    if (this.workoutTimerInterval) return;
     this.startTime = this.startTime || Date.now();
     this.workoutTimerInterval = setInterval(() => {
-      const elapsed = Math.floor((Date.now() - this.startTime) / 1000);
-      const m = Math.floor(elapsed / 60).toString().padStart(2,'0');
-      const s = (elapsed % 60).toString().padStart(2,'0');
-      const el = document.getElementById('session-timer');
-      if (el) el.textContent = `${m}:${s}`;
+      if (!this.isPaused) {
+        const elapsed = Math.floor((Date.now() - this.startTime - this.totalPausedTime) / 1000);
+        const m = Math.floor(elapsed / 60).toString().padStart(2,'0');
+        const s = (elapsed % 60).toString().padStart(2,'0');
+        const el = document.getElementById('session-timer');
+        if (el) el.textContent = `${m}:${s}`;
+      }
     }, 1000);
+  },
+
+  pauseWorkoutTimer() {
+    if (!this.isPaused) {
+      this.isPaused = true;
+      this.pauseStartTime = Date.now();
+      const el = document.getElementById('session-timer');
+      if (el) el.classList.add('paused');
+    }
+  },
+
+  resumeWorkoutTimer() {
+    if (this.isPaused && this.pauseStartTime) {
+      this.totalPausedTime += Date.now() - this.pauseStartTime;
+      this.isPaused = false;
+      this.pauseStartTime = null;
+      const el = document.getElementById('session-timer');
+      if (el) el.classList.remove('paused');
+    }
   },
 
   stopWorkoutTimer() {
@@ -369,20 +730,68 @@ const Session = {
       this.workoutTimerInterval = null;
     }
     if (this.startTime) {
-      this.totalWorkoutSeconds = Math.floor((Date.now() - this.startTime) / 1000);
+      this.totalWorkoutSeconds = Math.floor((Date.now() - this.startTime - this.totalPausedTime) / 1000);
     }
   },
 
-  // ── Per-set timer ──
+  // ── Set timer con pausa ──
   startSetTimer() {
+    if (this.mode === 'plan') {
+      // En modo planificación, solo mostrar 0:00
+      const el = document.getElementById('set-running-timer');
+      if (el) el.textContent = '0:00';
+      return;
+    } 
+
     this.setStartTime = Date.now();
+    this.setPausedTime = 0;
+    this.setIsPaused = false;
     const el = document.getElementById('set-running-timer');
+    const pauseBtn = document.getElementById('btn-pause-set');
+    if (pauseBtn) {
+      pauseBtn.textContent = '⏸';
+      pauseBtn.classList.remove('resumed');
+    }
+    
     this.setTimerInterval = setInterval(() => {
-      const secs = Math.floor((Date.now() - this.setStartTime) / 1000);
-      const m = Math.floor(secs / 60);
-      const s = (secs % 60).toString().padStart(2,'0');
-      if (el) el.textContent = `${m}:${s}`;
+      if (!this.setIsPaused) {
+        const secs = Math.floor((Date.now() - this.setStartTime - this.setPausedTime) / 1000);
+        const m = Math.floor(secs / 60);
+        const s = (secs % 60).toString().padStart(2,'0');
+        if (el) el.textContent = `${m}:${s}`;
+        
+        // Recordatorios cada 30s
+        if (secs > 0 && secs % 30 === 0 && secs !== this.lastReminder) {
+          this.lastReminder = secs;
+          showReminder();
+        }
+      }
     }, 1000);
+  },
+
+  pauseSetTimer() {
+    if (!this.setIsPaused) {
+      this.setIsPaused = true;
+      this.setPauseStart = Date.now();
+      const pauseBtn = document.getElementById('btn-pause-set');
+      if (pauseBtn) {
+        pauseBtn.textContent = '▶';
+        pauseBtn.classList.add('resumed');
+      }
+    }
+  },
+
+  resumeSetTimer() {
+    if (this.setIsPaused && this.setPauseStart) {
+      this.setPausedTime += Date.now() - this.setPauseStart;
+      this.setIsPaused = false;
+      this.setPauseStart = null;
+      const pauseBtn = document.getElementById('btn-pause-set');
+      if (pauseBtn) {
+        pauseBtn.textContent = '⏸';
+        pauseBtn.classList.remove('resumed');
+      }
+    }
   },
 
   stopSetTimer() {
@@ -391,31 +800,75 @@ const Session = {
       this.setTimerInterval = null;
     }
     const duration = this.setStartTime
-      ? Math.floor((Date.now() - this.setStartTime) / 1000) : 0;
+      ? Math.floor((Date.now() - this.setStartTime - this.setPausedTime) / 1000) : 0;
     this.setStartTime = null;
+    this.setPausedTime = 0;
+    this.setIsPaused = false;
     return duration;
   },
 
-  // ── Rest countdown timer ──
+  // ── Rest timer con pausa ──
   startRestTimer(onDone) {
     this.restRemaining = this.restSeconds;
     this.restTotal = this.restSeconds;
+    this.restIsPaused = false;
+    this.restPausedAt = null;
+    
     const countEl = document.getElementById('rest-countdown');
-    const barEl   = document.getElementById('rest-progress-bar');
+    const barEl = document.getElementById('rest-progress-bar');
+    const pauseBtn = document.getElementById('btn-pause-rest');
+    
     if (countEl) countEl.textContent = this.restRemaining;
-    if (barEl)   barEl.style.width = '100%';
+    if (barEl) barEl.style.width = '100%';
+    if (pauseBtn) {
+      pauseBtn.textContent = '⏸ Pausar';
+      pauseBtn.classList.remove('resumed');
+    }
 
     this.restTimerInterval = setInterval(() => {
-      this.restRemaining--;
-      this.totalRestTime++;
-      if (countEl) countEl.textContent = this.restRemaining;
-      const pct = (this.restRemaining / this.restTotal) * 100;
-      if (barEl) barEl.style.width = pct + '%';
-      if (this.restRemaining <= 0) {
-        this.stopRestTimer();
-        onDone();
+      if (!this.restIsPaused) {
+        this.restRemaining--;
+        this.totalRestTime++;
+        
+        if (countEl) countEl.textContent = this.restRemaining;
+        const pct = (this.restRemaining / this.restTotal) * 100;
+        if (barEl) barEl.style.width = pct + '%';
+        
+        // Recordatorios durante descanso
+        if (this.restRemaining > 0 && this.restRemaining % 30 === 0) {
+          showReminder();
+        }
+        
+        if (this.restRemaining <= 0) {
+          this.stopRestTimer();
+          onDone();
+        }
       }
     }, 1000);
+  },
+
+  pauseRestTimer() {
+    if (!this.restIsPaused) {
+      this.restIsPaused = true;
+      this.restPausedAt = Date.now();
+      const pauseBtn = document.getElementById('btn-pause-rest');
+      if (pauseBtn) {
+        pauseBtn.textContent = '▶ Reanudar';
+        pauseBtn.classList.add('resumed');
+      }
+    }
+  },
+
+  resumeRestTimer() {
+    if (this.restIsPaused) {
+      this.restIsPaused = false;
+      this.restPausedAt = null;
+      const pauseBtn = document.getElementById('btn-pause-rest');
+      if (pauseBtn) {
+        pauseBtn.textContent = '⏸ Pausar';
+        pauseBtn.classList.remove('resumed');
+      }
+    }
   },
 
   stopRestTimer() {
@@ -423,6 +876,8 @@ const Session = {
       clearInterval(this.restTimerInterval);
       this.restTimerInterval = null;
     }
+    this.restIsPaused = false;
+    this.restPausedAt = null;
   },
 
   stopAllTimers() {
@@ -431,49 +886,108 @@ const Session = {
     this.stopRestTimer();
   },
 
-  // ── Begin a new exercise ──
-  beginExercise(name, muscle) {
-    this.currentExercise = { id: uid(), name, muscle, sets: [] };
+  // ── Begin exercise con tipo de equipo ──
+  beginExercise(name, muscle, equipmentType = null, barbellType = null, barbellWeight = 0) {
+    this.currentExercise = { 
+      id: uid(), 
+      name, 
+      muscle, 
+      sets: [],
+      equipmentType: equipmentType || EQUIPMENT_TYPES.MACHINE,
+      barbellType: barbellType,
+      barbellWeight: barbellWeight || 0
+    };
     this.completedSets = [];
+    this.equipmentType = equipmentType || EQUIPMENT_TYPES.MACHINE;
+    this.barbellType = barbellType;
+    this.barbellWeight = barbellWeight || 0;
     this.nextWeight = 0;
+    
+    // Si estamos en modo planificación, no activar workout timer
+    if (this.mode === 'plan') {
+      this.active = false; // No activar timers
+    }
   },
 
-  // ── Finish the current set, returns saved set object ──
-  finishSet(weight, reps) {
+  // ── Finish set con tipo de serie ──
+  finishSet(weight, reps, setType = SET_TYPES.EFFECTIVE) {
     const duration = this.stopSetTimer();
     this.totalSeriesTime += duration;
-    this.startWorkoutTimer(); // starts only if not already running
+    this.startWorkoutTimer();
+
+    // Calcular peso real incluyendo barra si aplica
+    let realWeight = parseFloat(weight) || 0;
+    if (this.equipmentType === EQUIPMENT_TYPES.BARBELL && this.barbellWeight > 0) {
+      realWeight += this.barbellWeight;
+    }
 
     const set = {
       id: uid(),
       weight: String(weight),
+      realWeight: String(realWeight),
       reps: String(reps),
       duration,
+      setType: setType,
+      equipmentType: this.equipmentType
     };
+    
     this.completedSets.push(set);
     this.nextWeight = parseFloat(weight) || 0;
     return set;
   },
 
-  // ── Close current exercise and push to completedExercises ──
+  // ── Close exercise ──
   closeExercise() {
     if (!this.currentExercise) return;
     const ex = {
       ...this.currentExercise,
-      sets: [...this.completedSets]
+      sets: [...this.completedSets],
+      // Asegurar que se preserva la info de equipo
+      equipmentType: this.equipmentType || EQUIPMENT_TYPES.MACHINE,
+      barbellType: this.barbellType,
+      barbellWeight: this.barbellWeight || 0
     };
     this.completedExercises.push(ex);
     this.currentExercise = null;
     this.completedSets = [];
+    
+    // NO resetear equipo aquí, se hace en startExercise
     return ex;
   },
 
-  // ── Final workout totals ──
+  // ── Companion mode ──
+  setCompanionTurn(isCompanion) {
+    this.isCompanionTurn = isCompanion;
+    if (isCompanion) {
+      this.pauseWorkoutTimer();
+      const companionWaitStart = Date.now();
+      // Guardar timestamp para calcular tiempo de espera
+      this.companionWaitStart = companionWaitStart;
+    } else {
+      if (this.companionWaitStart) {
+        this.companionWaitTime += Math.floor((Date.now() - this.companionWaitStart) / 1000);
+        this.companionWaitStart = null;
+      }
+      this.resumeWorkoutTimer();
+    }
+  },
+
+  // ── Get totals ──
   getTotals() {
     this.stopAllTimers();
     const allExercises = [...this.completedExercises];
-    const totalVolume  = allExercises.reduce((t, ex) => t + calcVolume(ex.sets), 0);
-    const totalSets    = allExercises.reduce((t, ex) => t + ex.sets.length, 0);
+    
+    // Calcular volumen usando peso real
+    const totalVolume = allExercises.reduce((t, ex) => {
+      return t + ex.sets.reduce((s, set) => {
+        const w = parseFloat(set.realWeight || set.weight) || 0;
+        const r = parseInt(set.reps) || 0;
+        return s + (w * r);
+      }, 0);
+    }, 0);
+    
+    const totalSets = allExercises.reduce((t, ex) => t + ex.sets.length, 0);
+    
     return {
       name: this.workoutName || 'Entrenamiento',
       type: this.workoutType,
@@ -484,9 +998,103 @@ const Session = {
       exerciseCount: allExercises.length,
       seriesTime: this.totalSeriesTime,
       restTime: this.totalRestTime,
+      skippedRestTime: this.totalSkippedRestTime,
+      companionMode: this.companionMode,
+      companionName: this.companionName,
+      companionWaitTime: this.companionWaitTime
     };
+  },
+
+  // ── Crear plantilla ──
+  saveAsTemplate() {
+    if (this.completedExercises.length === 0 && !this.currentExercise) {
+      showToast('No hay ejercicios para guardar como plantilla ✋');
+      return null;
+    }
+
+    const exercises = [...this.completedExercises];
+    if (this.currentExercise && this.completedSets.length > 0) {
+      exercises.push({
+        ...this.currentExercise,
+        sets: [...this.completedSets]
+      });
+    }
+
+    const template = {
+      id: uid(),
+      name: this.workoutName || 'Rutina sin nombre',
+      type: this.workoutType,
+      exercises: exercises.map(ex => ({
+        name: ex.name,
+        muscle: ex.muscle,
+        equipmentType: ex.equipmentType || EQUIPMENT_TYPES.MACHINE,
+        barbellType: ex.barbellType,
+        barbellWeight: ex.barbellWeight || 0,
+        estimatedSets: ex.sets.length,
+        estimatedWeight: ex.sets.length > 0 ? parseFloat(ex.sets[0].weight) || 0 : 0
+      })),
+      restSeconds: this.restSeconds,
+      createdAt: new Date().toISOString()
+    };
+
+    DataStore.addTemplate(template);
+    return template;
+  },
+
+  // ── Cargar desde plantilla ──
+  loadFromTemplate(templateId) {
+    const template = DataStore.getTemplate(templateId);
+    if (!template) return false;
+
+    this.workoutName = template.name;
+    this.workoutType = template.type;
+    this.restSeconds = template.restSeconds || 90;
+    
+    return template;
   }
 };
+
+// Reemplazar Session con SessionV3 en el código principal
+const Session = SessionV3;
+
+/* ============================================================
+   RECORDATORIOS INTELIGENTES
+   ============================================================ */
+
+const REMINDERS = [
+  '💧 Recuerda hidratarte',
+  '🫁 Controla la respiración',
+  '🎯 Mantén la técnica',
+  '⚠️ No bloquees articulaciones',
+  '🧘 Concéntrate en el músculo',
+  '💪 Mantén la tensión',
+  '🔥 Explosivo en la subida',
+  '⏱️ Controla la bajada',
+  '🎯 Rango completo de movimiento'
+];
+
+let lastReminderIndex = -1;
+
+function showReminder() {
+  let index;
+  do {
+    index = Math.floor(Math.random() * REMINDERS.length);
+  } while (index === lastReminderIndex && REMINDERS.length > 1);
+  
+  lastReminderIndex = index;
+  
+  const reminderEl = document.getElementById('training-reminder');
+  if (reminderEl) {
+    reminderEl.textContent = REMINDERS[index];
+    reminderEl.classList.remove('hidden');
+    reminderEl.classList.add('show');
+    
+    setTimeout(() => {
+      reminderEl.classList.remove('show');
+      setTimeout(() => reminderEl.classList.add('hidden'), 300);
+    }, 4000);
+  }
+}
 
 /* ============================================================
    MODAL CONTROLLER
@@ -700,17 +1308,31 @@ function openWorkoutDetail(postId) {
           <span class="pr-text">${pr.exercise} — ${pr.weight}kg</span>
         </div>`).join('')}
     </div>` : '';
-
+  
   const exHtml = (post.exercises || []).map(ex => {
-    const sets = ex.sets.map((s, i) => `
-      <div class="detail-set-row">
-        <div class="detail-set-num">${i+1}</div>
-        <div class="detail-set-info">${s.weight}kg × ${s.reps} reps</div>
-        <div class="detail-set-vol">${Math.round(parseFloat(s.weight)*parseInt(s.reps))} kg-vol</div>
-      </div>`).join('');
+    let equipmentInfo = '';
+    if (ex.equipmentType === EQUIPMENT_TYPES.BARBELL && ex.barbellWeight > 0) {
+      equipmentInfo = `<div class="detail-equipment">🏋️ ${ex.barbellType} (${ex.barbellWeight}kg)</div>`;
+    } else if (ex.equipmentType === EQUIPMENT_TYPES.DUMBBELL) {
+      equipmentInfo = `<div class="detail-equipment">🏋️ Mancuernas</div>`;
+    } else if (ex.equipmentType) {
+      equipmentInfo = `<div class="detail-equipment">🔧 Máquina</div>`;
+    }
+    
+    const sets = ex.sets.map((s, i) => {
+      const displayWeight = s.realWeight || s.weight;
+      return `
+        <div class="detail-set-row">
+          <div class="detail-set-num">${i+1}</div>
+          <div class="detail-set-info">${s.weight}kg × ${s.reps} reps ${s.realWeight && s.realWeight !== s.weight ? `(${s.realWeight}kg total)` : ''}</div>
+          <div class="detail-set-vol">${Math.round(parseFloat(displayWeight)*parseInt(s.reps))} kg-vol</div>
+        </div>`;
+    }).join('');
+    
     return `
       <div class="detail-exercise-item">
         <div class="detail-exercise-name">${ex.name}</div>
+        ${equipmentInfo}
         ${sets}
       </div>`;
   }).join('');
@@ -799,7 +1421,9 @@ function renderTrainHome() {
 /* ============================================================
    TRAIN CONFIG VIEW
    ============================================================ */
-function renderConfigView() {
+
+// Renderizar vista de configuración (modificada)
+function renderConfigViewV2() {
   const typeContainer = document.getElementById('type-options');
   if (typeContainer && typeContainer.childElementCount === 0) {
     typeContainer.innerHTML = WORKOUT_TYPES.map((t, i) =>
@@ -824,6 +1448,12 @@ function renderConfigView() {
       Session.restSeconds = parseInt(btn.dataset.secs);
     });
   });
+  
+  // Configurar modo compañero
+  const companionCheck = document.getElementById('companion-mode-check');
+  if (companionCheck) {
+    companionCheck.addEventListener('change', handleCompanionToggle);
+  }
 }
 
 /* ============================================================
@@ -836,16 +1466,42 @@ function showExState(stateId) {
   });
 }
 
-function renderExercisePreview(name, muscle) {
+// Renderizar preview del ejercicio (modificado)
+
+function renderExercisePreviewV2(name, muscle) {
   const INFO = {
-    'Press Banca':    { desc: 'Empuje horizontal de pecho. Controla la bajada en 2-3s y explota en la subida.', errors: 'Levantar la espalda del banco. No bajar la barra al pecho.' },
-    'Sentadilla':     { desc: 'Ejercicio rey del tren inferior. Mantén el torso erguido y rodillas alineadas con los pies.', errors: 'Rodillas hacia adentro (valgo). Talones levantados.' },
-    'Peso Muerto':    { desc: 'Tracción del suelo al hip. Espalda neutra en todo momento, barra pegada al cuerpo.', errors: 'Redondear la zona lumbar. Barra separada del cuerpo.' },
-    'Press Militar':  { desc: 'Empuje vertical de hombros. Core braceado, no arquees la zona lumbar.', errors: 'Arquear excesivamente la espalda. Codos muy abiertos.' },
-    'Dominadas':      { desc: 'Tracción vertical. Escápulas retraídas al inicio, pecho buscando la barra.', errors: 'Balanceo del cuerpo. No completar el rango de movimiento.' },
-    'Remo Barra':     { desc: 'Tracción horizontal de espalda. Torso a ~45°, codos cerca del cuerpo.', errors: 'Usar impulso del torso. Barra demasiado alta o baja.' },
-    'Hip Thrust':     { desc: 'Empuje de cadera. Espalda alta sobre el banco, contrae glúteos en el tope.', errors: 'Hiperextender la zona lumbar. No alcanzar extensión completa de cadera.' },
-    'default':        { desc: 'Mantén la técnica correcta durante todo el rango de movimiento. Controla el peso en todo momento.', errors: 'Usar peso excesivo sacrificando la técnica.' }
+    'Press Banca': {
+      desc: 'Empuje horizontal de pecho. Controla la bajada en 2-3s y explota en la subida.',
+      errors: 'Levantar la espalda del banco. No bajar la barra al pecho.'
+    },
+    'Sentadilla': {
+      desc: 'Ejercicio rey del tren inferior. Mantén el torso erguido y rodillas alineadas con los pies.',
+      errors: 'Rodillas hacia adentro (valgo). Talones levantados.'
+    },
+    'Peso Muerto': {
+      desc: 'Tracción del suelo al hip. Espalda neutra en todo momento, barra pegada al cuerpo.',
+      errors: 'Redondear la zona lumbar. Barra separada del cuerpo.'
+    },
+    'Press Militar': {
+      desc: 'Empuje vertical de hombros. Core braceado, no arquees la zona lumbar.',
+      errors: 'Arquear excesivamente la espalda. Codos muy abiertos.'
+    },
+    'Dominadas': {
+      desc: 'Tracción vertical. Escápulas retraídas al inicio, pecho buscando la barra.',
+      errors: 'Balanceo del cuerpo. No completar el rango de movimiento.'
+    },
+    'Remo Barra': {
+      desc: 'Tracción horizontal de espalda. Torso a ~45°, codos cerca del cuerpo.',
+      errors: 'Usar impulso del torso. Barra demasiado alta o baja.'
+    },
+    'Hip Thrust': {
+      desc: 'Empuje de cadera. Espalda alta sobre el banco, contrae glúteos en el tope.',
+      errors: 'Hiperextender la zona lumbar. No alcanzar extensión completa de cadera.'
+    },
+    'default': {
+      desc: 'Mantén la técnica correcta durante todo el rango de movimiento. Controla el peso en todo momento.',
+      errors: 'Usar peso excesivo sacrificando la técnica.'
+    }
   };
 
   const info = INFO[name] || INFO['default'];
@@ -853,10 +1509,31 @@ function renderExercisePreview(name, muscle) {
   document.getElementById('active-ex-muscle').textContent = muscle.toUpperCase();
   document.getElementById('active-exercise-panel').classList.remove('hidden');
 
+  // Inicializar equipo con valor por defecto si no está configurado
+  if (!Session.equipmentType) {
+    Session.equipmentType = EQUIPMENT_TYPES.MACHINE;
+  }
+
+  // Determinar texto del label de equipo
+  let equipmentText = '🔧 Máquina';
+  if (Session.equipmentType === EQUIPMENT_TYPES.BARBELL) {
+    if (Session.barbellType && Session.barbellWeight > 0) {
+      equipmentText = `🏋️ ${Session.barbellType} (${Session.barbellWeight}kg)`;
+    } else {
+      equipmentText = '🏋️ Barra Libre (configurar peso)';
+    }
+  } else if (Session.equipmentType === EQUIPMENT_TYPES.DUMBBELL) {
+    equipmentText = '🏋️ Mancuernas';
+  }
+
   document.getElementById('ex-preview-body').innerHTML = `
     <div class="ex-preview-muscle-row">
       <span class="muscle-chip">💪 ${muscle}</span>
+      <button class="btn-equipment-config" onclick="openEquipmentModal()">
+        ⚙️ Configurar equipo
+      </button>
     </div>
+    <div id="current-equipment-label" class="current-equipment-label">${equipmentText}</div>
     <div class="ex-preview-desc">${info.desc}</div>
     <div class="ex-preview-errors">
       <strong>⚠ Errores comunes</strong>
@@ -864,27 +1541,49 @@ function renderExercisePreview(name, muscle) {
     </div>`;
 
   showExState('state-preview');
-  renderCompletedSets();
+  renderCompletedSetsV2();
 }
 
-function renderCompletedSets() {
-  const sets   = Session.completedSets;
-  const prs    = DataStore.getPRs();
+// Renderizar sets completados (modificado)
+function renderCompletedSetsV2() {
+  const sets = Session.completedSets;
+  const prs = DataStore.getPRs();
   const titleEl = document.getElementById('completed-sets-title');
-  const listEl  = document.getElementById('completed-sets-list');
+  const listEl = document.getElementById('completed-sets-list');
   if (!titleEl || !listEl) return;
 
-  if (sets.length === 0) { titleEl.textContent = ''; listEl.innerHTML = ''; return; }
+  if (sets.length === 0) {
+    titleEl.textContent = '';
+    listEl.innerHTML = '';
+    return;
+  }
 
   titleEl.textContent = `${sets.length} serie${sets.length > 1 ? 's' : ''} completada${sets.length > 1 ? 's' : ''}`;
   const exName = Session.currentExercise?.name || '';
+  
   listEl.innerHTML = sets.map((s, i) => {
-    const isPR = parseFloat(s.weight) > 0 && detectPR(exName, s.weight, prs);
-    const vol  = Math.round(parseFloat(s.weight) * parseInt(s.reps));
+    const isPR = detectPRV2(exName, s.realWeight || s.weight, prs, s.setType);
+    const vol = Math.round(parseFloat(s.realWeight || s.weight) * parseInt(s.reps));
+    
+    const typeLabel = s.setType === SET_TYPES.WARMUP ? '🔥' : 
+                      s.setType === SET_TYPES.APPROACH ? '📊' : '💪';
+    const typeTooltip = s.setType === SET_TYPES.WARMUP ? 'Calentamiento' : 
+                        s.setType === SET_TYPES.APPROACH ? 'Aproximación' : 'Efectiva';
+    
     return `
       <div class="done-set-row">
-        <div class="done-set-num ${isPR ? 'pr-set' : ''}">${isPR ? '👑' : i+1}</div>
-        <div class="done-set-info">${s.weight}kg × ${s.reps} reps</div>
+        <div class="done-set-num ${isPR ? 'pr-set' : ''}" title="${typeTooltip}">
+          ${isPR ? '👑' : typeLabel}
+        </div>
+        <div class="done-set-info">
+          ${s.weight}kg × ${s.reps} reps
+          ${s.equipmentType === EQUIPMENT_TYPES.BARBELL && s.realWeight !== s.weight 
+            ? `<span class="real-weight-note">(${s.realWeight}kg con barra)</span>` 
+            : ''}
+          ${s.equipmentType === EQUIPMENT_TYPES.DUMBBELL 
+            ? `<span class="equipment-note">🏋️</span>` 
+            : ''}
+        </div>
         <div class="done-set-time">⏱ ${fmtDuration(s.duration)}</div>
         <div class="done-set-vol">${vol > 0 ? vol + 'kg' : ''}</div>
       </div>`;
@@ -895,7 +1594,7 @@ function renderCompletedExercises() {
   const listEl = document.getElementById('completed-exercises-list');
   if (!listEl) return;
   listEl.innerHTML = Session.completedExercises.map(ex => {
-    const vol = calcVolume(ex.sets);
+    const vol = calcVolumeV2(ex.sets);
     return `
       <div class="completed-ex-row">
         <div>
@@ -907,18 +1606,36 @@ function renderCompletedExercises() {
   }).join('');
 }
 
-function beginNextSet() {
+// Renderizar inicio de siguiente serie (modificado)
+function beginNextSetV2() {
   const setNumber = Session.completedSets.length + 1;
   const badge = document.getElementById('set-running-badge');
   if (badge) badge.textContent = `SERIE ${setNumber}`;
 
   const weightInput = document.getElementById('set-weight-input');
-  const repsInput   = document.getElementById('set-reps-input');
+  const repsInput = document.getElementById('set-reps-input');
   if (weightInput) weightInput.value = Session.nextWeight > 0 ? Session.nextWeight : '';
-  if (repsInput)   repsInput.value = '';
+  
+  // Agregar placeholder dinámico según equipo
+  if (weightInput) {
+    if (Session.equipmentType === EQUIPMENT_TYPES.BARBELL && Session.barbellWeight > 0) {
+      weightInput.placeholder = `Peso sin barra (barra: ${Session.barbellWeight}kg)`;
+    } else if (Session.equipmentType === EQUIPMENT_TYPES.DUMBBELL) {
+      weightInput.placeholder = 'Peso por mancuerna';
+    } else {
+      weightInput.placeholder = 'Peso en máquina';
+    }
+  }
+
+  if (repsInput) repsInput.value = '';
 
   const timerEl = document.getElementById('set-running-timer');
   if (timerEl) timerEl.textContent = '0:00';
+  
+  // Resetear selección de tipo de serie a "efectiva"
+  document.querySelectorAll('.set-type-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.type === SET_TYPES.EFFECTIVE);
+  });
 
   showExState('state-set-running');
   Session.startSetTimer();
@@ -929,39 +1646,189 @@ function beginNextSet() {
   }, 80);
 }
 
-function handleFinishSet() {
-  const weight = parseFloat(document.getElementById('set-weight-input').value) || 0;
-  const reps   = parseInt(document.getElementById('set-reps-input').value) || 0;
+// Handler: Finalizar serie (mejorado)
 
+function handleFinishSetV2() {
+  const weight = parseFloat(document.getElementById('set-weight-input').value) || 0;
+  const reps = parseInt(document.getElementById('set-reps-input').value) || 0;
+  
   if (weight === 0 && reps === 0) {
     showToast('Registra al menos peso o repeticiones ✋');
     return;
   }
+  
+  const setTypeBtn = document.querySelector('.set-type-btn.active');
+  const setType = setTypeBtn ? setTypeBtn.dataset.type : SET_TYPES.EFFECTIVE;
+  
+  // En modo planificación, no hay duración real
+  let set;
+  if (Session.mode === 'plan') {
+    // Calcular peso real incluyendo barra si aplica
+    let realWeight = parseFloat(weight) || 0;
+    if (Session.equipmentType === EQUIPMENT_TYPES.BARBELL && Session.barbellWeight > 0) {
+      realWeight += Session.barbellWeight;
+    }
+    
+    set = {
+      id: uid(),
+      weight: String(weight),
+      realWeight: String(realWeight),
+      reps: String(reps),
+      duration: 0, // Sin duración en planificación
+      setType: setType,
+      equipmentType: Session.equipmentType
+    };
+    
+    Session.completedSets.push(set);
+    Session.nextWeight = parseFloat(weight) || 0;
+    
+    // Ir directo a la siguiente serie sin descanso
+    document.getElementById('rest-weight-val').textContent = weight;
+    renderCompletedSetsV2();
+    
+    // Preguntar si quiere otra serie o finalizar
+    if (confirm('¿Agregar otra serie a este ejercicio?')) {
+      beginNextSetV2();
+    } else {
+      handleFinishExercise();
+    }
+  } else {
+    // Modo normal con timer
+    set = Session.finishSet(weight, reps, setType);
+    
+    const lastSetEl = document.getElementById('rest-last-set');
+    if (lastSetEl) {
+      const typeLabel = setType === SET_TYPES.WARMUP ? 'Calentamiento' : 
+                        setType === SET_TYPES.APPROACH ? 'Aproximación' : 'Efectiva';
+      
+      let equipmentInfo = '';
+      if (Session.equipmentType === EQUIPMENT_TYPES.BARBELL && Session.barbellWeight > 0) {
+        equipmentInfo = ` (${set.realWeight}kg con ${Session.barbellType})`;
+      } else if (Session.equipmentType === EQUIPMENT_TYPES.DUMBBELL) {
+        equipmentInfo = ' (Mancuernas)';
+      } else {
+        equipmentInfo = ' (Máquina)';
+      }
+      
+      let text = `Serie ${Session.completedSets.length} (${typeLabel}): ${weight}kg × ${reps} reps${equipmentInfo} · ${fmtDuration(set.duration)}`;
+      
+      lastSetEl.textContent = text;
+    }
 
-  const set = Session.finishSet(weight, reps);
+    document.getElementById('rest-weight-val').textContent = weight;
+    Session.nextWeight = weight;
 
-  const lastSetEl = document.getElementById('rest-last-set');
-  if (lastSetEl) {
-    lastSetEl.textContent = `Serie ${Session.completedSets.length} completada: ${weight}kg × ${reps} reps · ${fmtDuration(set.duration)}`;
+    showExState('state-rest');
+    renderCompletedSetsV2();
+
+    Session.startRestTimer(() => {
+      showToast('¡Descanso terminado! A por la siguiente serie 💪');
+      beginNextSetV2();
+    });
   }
-
-  document.getElementById('rest-weight-val').textContent = weight;
-  Session.nextWeight = weight;
-
-  showExState('state-rest');
-  renderCompletedSets();
-
-  Session.startRestTimer(() => {
-    showToast('¡Descanso terminado! A por la siguiente serie 💪');
-    beginNextSet();
-  });
 }
 
-function handleSkipRest() {
+// Handler: Guardar como plantilla
+function handleSaveAsTemplate() {
+  const template = Session.saveAsTemplate();
+  if (template) {
+    showToast(`Plantilla "${template.name}" guardada ✓`);
+    renderTemplatesList();
+  }
+}
+
+function handleSaveTemplateFromConfig() {
+  const name = document.getElementById('config-name').value.trim();
+  if (!name) {
+    showToast('Ingresa un nombre para la plantilla ✋');
+    return;
+  }
+  
+  // Crear plantilla vacía que se llenará después
+  const template = {
+    id: uid(),
+    name: name,
+    type: Session.workoutType,
+    exercises: [], // Vacío por ahora
+    restSeconds: Session.restSeconds,
+    createdAt: new Date().toISOString(),
+    isPlanTemplate: true // Marca que es plantilla de planificación
+  };
+  
+  DataStore.addTemplate(template);
+  showToast(`Plantilla "${name}" creada. Agrégale ejercicios ✓`);
+  
+  // Continuar a agregar ejercicios
+  Session.workoutName = name;
+  document.getElementById('session-name-display').textContent = name;
+  document.getElementById('active-exercise-panel').classList.add('hidden');
+  document.getElementById('completed-exercises-list').innerHTML = '';
+  showTrainView('train-session');
+  openAddExerciseModal();
+}
+
+
+// Handler: Cargar plantilla
+function handleLoadTemplate(templateId) {
+  const template = Session.loadFromTemplate(templateId);
+  if (!template) return;
+  
+  Session.active = true;
+  document.getElementById('config-name').value = template.name;
+  document.getElementById('session-name-display').textContent = template.name;
+  
+  // Establecer tipo y descanso
+  const typeBtn = document.querySelector(`.type-btn[data-type="${template.type}"]`);
+  if (typeBtn) typeBtn.click();
+  
+  const restBtn = document.querySelector(`.rest-btn[data-secs="${template.restSeconds}"]`);
+  if (restBtn) restBtn.click();
+  
+  Modal.close('modal-templates');
+  showTrainView('train-session');
+  
+  // Auto-cargar primer ejercicio
+  if (template.exercises.length > 0) {
+    const firstEx = template.exercises[0];
+    startExerciseFromTemplate(firstEx);
+  }
+}
+
+// Handler: Iniciar ejercicio desde plantilla
+function startExerciseFromTemplate(templateExercise) {
+  Session.beginExercise(
+    templateExercise.name,
+    templateExercise.muscle,
+    templateExercise.equipmentType || EQUIPMENT_TYPES.MACHINE,
+    templateExercise.barbellType,
+    templateExercise.barbellWeight || 0
+  );
+  
+  Session.nextWeight = templateExercise.estimatedWeight || 0;
+  
+  renderExercisePreviewV2(templateExercise.name, templateExercise.muscle);
+  renderCompletedSetsV2();
+  
+  // Actualizar UI de equipo se hace automáticamente en renderExercisePreviewV2
+}
+
+// Handler: Eliminar plantilla
+function handleDeleteTemplate(templateId) {
+  if (confirm('¿Eliminar esta plantilla?')) {
+    DataStore.deleteTemplate(templateId);
+    renderTemplatesList();
+    showToast('Plantilla eliminada ✓');
+  }
+}
+
+// Handler: Omitir descanso (mejorado)
+function handleSkipRestV2() {
   const elapsed = Session.restTotal - Session.restRemaining;
+  const skipped = Session.restRemaining;
   Session.totalRestTime += elapsed;
+  Session.totalSkippedRestTime += skipped;
   Session.stopRestTimer();
-  beginNextSet();
+  beginNextSetV2();
 }
 
 function handleFinishExercise() {
@@ -975,20 +1842,80 @@ function handleFinishExercise() {
   renderCompletedExercises();
   document.getElementById('active-exercise-panel').classList.add('hidden');
   showExState('state-preview');
-  showToast(`${ex.name} completado — ${fmtVolume(calcVolume(ex.sets))} 🔥`);
+
+  // Si estamos en modo planificación, actualizar la plantilla
+  if (Session.mode === 'plan') {
+    updatePlanTemplate();
+  }
+
+  showToast(`${ex.name} completado — ${fmtVolume(calcVolumeV2(ex.sets))} 🔥`);
+}
+
+function updatePlanTemplate() {
+  const templates = DataStore.getTemplates();
+  const currentTemplate = templates.find(t => 
+    t.name === Session.workoutName && t.isPlanTemplate
+  );
+  
+  if (currentTemplate) {
+    // Actualizar ejercicios en la plantilla
+    currentTemplate.exercises = Session.completedExercises.map(ex => ({
+      name: ex.name,
+      muscle: ex.muscle,
+      equipmentType: ex.equipmentType || EQUIPMENT_TYPES.MACHINE,
+      barbellType: ex.barbellType,
+      barbellWeight: ex.barbellWeight || 0,
+      estimatedSets: ex.sets.length,
+      estimatedWeight: ex.sets.length > 0 ? parseFloat(ex.sets[0].weight) || 0 : 0
+    }));
+    
+    DataStore.saveTemplates(templates);
+  }
 }
 
 /* ============================================================
    RENDERER: SESSION (ACTIVE WORKOUT)
    ============================================================ */
-function renderSession() {
+// Renderizar lista de plantillas
+function renderTemplatesList() {
+  const list = document.getElementById('templates-list');
+  if (!list) return;
+  
+  const templates = DataStore.getTemplates();
+  
+  if (templates.length === 0) {
+    list.innerHTML = `
+      <div style="text-align:center;padding:30px 0;color:var(--text-secondary);font-size:13px;">
+        Sin plantillas guardadas. Crea tu primera rutina y guárdala como plantilla.
+      </div>`;
+    return;
+  }
+  
+  list.innerHTML = templates.map(t => `
+    <div class="template-card">
+      <div class="template-header">
+        <div>
+          <div class="template-name">${t.name}</div>
+          <div class="template-meta">${t.exercises.length} ejercicios · ${fmtRelTime(t.createdAt)}</div>
+        </div>
+        <button class="btn-delete-template" onclick="handleDeleteTemplate('${t.id}')">✕</button>
+      </div>
+      <div class="template-type-badge">${t.type}</div>
+      <button class="btn-use-template" onclick="handleLoadTemplate('${t.id}')">
+        Usar plantilla →
+      </button>
+    </div>
+  `).join('');
+}
+
+   function renderSession() {
   const list = document.getElementById('exercises-list');
   if (!list) return;
 
   const prs = DataStore.getPRs();
 
   list.innerHTML = Session.exercises.map(ex => {
-    const vol = calcVolume(ex.sets);
+    const vol = calcVolumeV2(ex.sets);
     const setsHtml = ex.sets.map((set, idx) => {
       const weight = parseFloat(set.weight) || 0;
       const isPR = weight > 0 && detectPR(ex.name, weight, prs);
@@ -1072,7 +1999,7 @@ function updateExerciseVolume(exerciseId) {
   const card = document.querySelector(`.exercise-card[data-exercise-id="${exerciseId}"]`);
   if (card) {
     const volEl = card.querySelector('.exercise-volume');
-    if (volEl) volEl.textContent = `Volumen: ${fmtVolume(calcVolume(ex.sets))}`;
+    if (volEl) volEl.textContent = `Volumen: ${fmtVolume(calcVolumeV2(ex.sets))}`;
   }
 }
 
@@ -1116,6 +2043,25 @@ function renderSummary(workout) {
       <div class="tbd-val">${fmtDuration(workout.duration)}</div>
     </div>`;
 
+    // Rellenar el desglose extendido
+    const seriesTimeEl = document.getElementById('summary-series-time');
+    const restTimeEl = document.getElementById('summary-rest-time');
+    const skippedTimeEl = document.getElementById('summary-skipped-time');
+    const totalTimeEl = document.getElementById('summary-total-time');
+
+    if (seriesTimeEl) seriesTimeEl.textContent = fmtDuration(workout.seriesTime || 0);
+    if (restTimeEl) restTimeEl.textContent = fmtDuration(workout.restTime || 0);
+    if (skippedTimeEl) skippedTimeEl.textContent = fmtDuration(workout.skippedRestTime || 0);
+    if (totalTimeEl) totalTimeEl.textContent = fmtDuration(workout.duration);
+
+    // Si hay compañero, mostrar tiempo de espera
+    if (workout.companionMode && workout.companionWaitTime > 0) {
+      const companionRow = document.querySelector('.companion-wait-row');
+      const companionTimeEl = document.getElementById('summary-companion-time');
+      if (companionRow) companionRow.classList.remove('hidden');
+      if (companionTimeEl) companionTimeEl.textContent = fmtDuration(workout.companionWaitTime);
+    }
+
   const prsEl = document.getElementById('summary-prs');
   prsEl.innerHTML = workout.prs.length > 0 ? `
     <div class="summary-prs-title">👑 PERSONAL RECORDS NUEVOS</div>
@@ -1127,14 +2073,26 @@ function renderSummary(workout) {
 
   document.getElementById('summary-exercises').innerHTML = `
     <div style="padding:0 0 10px;font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--text-secondary);">EJERCICIOS</div>
-    ${workout.exercises.map(ex => `
-      <div class="summary-exercise-item">
-        <div>
-          <div class="summary-exercise-name">${ex.name}</div>
-          <div class="summary-exercise-sets">${ex.sets.length} series · ${fmtDuration(ex.sets.reduce((t,s)=>t+(s.duration||0),0))} activo</div>
-        </div>
-        <div class="summary-exercise-vol">${fmtVolume(calcVolume(ex.sets))}</div>
-      </div>`).join('')}`;
+    ${workout.exercises.map(ex => {
+      let equipmentBadge = '';
+      if (ex.equipmentType === EQUIPMENT_TYPES.BARBELL && ex.barbellWeight > 0) {
+        equipmentBadge = `<span class="equipment-badge barbell">🏋️ ${ex.barbellType} (${ex.barbellWeight}kg)</span>`;
+      } else if (ex.equipmentType === EQUIPMENT_TYPES.DUMBBELL) {
+        equipmentBadge = `<span class="equipment-badge dumbbell">🏋️ Mancuernas</span>`;
+      } else {
+        equipmentBadge = `<span class="equipment-badge machine">🔧 Máquina</span>`;
+      }
+      
+      return `
+        <div class="summary-exercise-item">
+          <div>
+            <div class="summary-exercise-name">${ex.name}</div>
+            ${equipmentBadge}
+            <div class="summary-exercise-sets">${ex.sets.length} series · ${fmtDuration(ex.sets.reduce((t,s)=>t+(s.duration||0),0))} activo</div>
+          </div>
+          <div class="summary-exercise-vol">${fmtVolume(calcVolumeV2(ex.sets))}</div>
+        </div>`;
+    }).join('')}`;
 }
 
 /* ============================================================
@@ -1543,6 +2501,7 @@ function renderProfile() {
 /* ============================================================
    WORKOUT: FINISH & SAVE
    ============================================================ */
+
 function finishWorkout() {
   if (Session.currentExercise && Session.completedSets.length > 0) {
     Session.closeExercise();
@@ -1552,15 +2511,28 @@ function finishWorkout() {
     return;
   }
 
+  // Si estamos en modo planificación, guardar como plantilla y salir
+  if (Session.mode === 'plan') {
+    updatePlanTemplate();
+    showToast('Plantilla guardada correctamente ✓');
+    showTrainView('train-home');
+    Nav.goto('train');
+    renderTrainHome();
+    return;
+  }
+
+  // Modo normal - guardar workout
   const totals = Session.getTotals();
-  const newPRs = updatePRs(totals.exercises);
+  const newPRs = updatePRsV2(totals.exercises);
 
   const workout = {
     id: uid(), name: totals.name, type: totals.type,
     date: new Date().toISOString(), duration: totals.duration,
     exercises: totals.exercises, totalVolume: totals.totalVolume,
     totalSets: totals.totalSets, exerciseCount: totals.exerciseCount,
-    seriesTime: totals.seriesTime, restTime: totals.restTime, prs: newPRs,
+    seriesTime: totals.seriesTime, restTime: totals.restTime, 
+    skippedRestTime: totals.skippedRestTime,
+    prs: newPRs,
   };
 
   DataStore.addWorkout(workout);
@@ -1637,9 +2609,15 @@ function startExercise(name, muscle) {
     Session.closeExercise();
     renderCompletedExercises();
   }
+  
+  // Resetear configuración de equipo para nuevo ejercicio
+  Session.equipmentType = EQUIPMENT_TYPES.MACHINE;
+  Session.barbellType = null;
+  Session.barbellWeight = 0;
+  
   Session.beginExercise(name, muscle || 'General');
-  renderExercisePreview(name, muscle || 'General');
-  renderCompletedSets();
+  renderExercisePreviewV2(name, muscle || 'General');
+  renderCompletedSetsV2();
 
   setTimeout(() => {
     const panel = document.getElementById('active-exercise-panel');
@@ -1692,6 +2670,86 @@ function showTrainView(viewId) {
 }
 
 /* ============================================================
+   INICIALIZACIÓN Y BINDINGS ADICIONALES
+   ============================================================ */
+
+function initTrainingImprovements() {
+  // Botón de modo de entrenamiento
+  const btnStartWorkout = document.getElementById('btn-start-workout');
+  if (btnStartWorkout) {
+    btnStartWorkout.removeEventListener('click', handleWorkoutModeSelection);
+    btnStartWorkout.addEventListener('click', handleWorkoutModeSelection);
+  }
+  
+  // Pausar/reanudar serie
+  const btnPauseSet = document.getElementById('btn-pause-set');
+  if (btnPauseSet) {
+    btnPauseSet.addEventListener('click', toggleSetPause);
+  }
+  
+  // Pausar/reanudar descanso
+  const btnPauseRest = document.getElementById('btn-pause-rest');
+  if (btnPauseRest) {
+    btnPauseRest.addEventListener('click', toggleRestPause);
+  }
+  
+  // Turno de compañero
+  const btnCompanionTurn = document.getElementById('btn-companion-turn');
+  if (btnCompanionTurn) {
+    btnCompanionTurn.addEventListener('click', toggleCompanionTurn);
+  }
+  
+  // Guardar como plantilla
+  const btnSaveTemplate = document.getElementById('btn-save-template');
+  if (btnSaveTemplate) {
+    btnSaveTemplate.addEventListener('click', handleSaveAsTemplate);
+  }
+  
+  // Ver plantillas
+  const btnViewTemplates = document.getElementById('btn-view-templates');
+  if (btnViewTemplates) {
+    btnViewTemplates.addEventListener('click', () => {
+      renderTemplatesList();
+      Modal.open('modal-templates');
+    });
+  }
+  
+  // Peso personalizado de barra
+  const barbellWeightInput = document.getElementById('barbell-custom-weight');
+  if (barbellWeightInput) {
+    barbellWeightInput.addEventListener('input', handleCustomBarbellWeight);
+  }
+  
+  // Confirmar equipo
+  const btnConfirmEquipment = document.getElementById('btn-confirm-equipment');
+  if (btnConfirmEquipment) {
+    btnConfirmEquipment.addEventListener('click', confirmEquipmentType);
+  }
+  
+  // Reemplazar handlers existentes
+  const btnFinishSet = document.getElementById('btn-finish-set');
+  if (btnFinishSet) {
+    //btnFinishSet.removeEventListener('click', handleFinishSetV2);
+    btnFinishSet.addEventListener('click', handleFinishSetV2);
+  }
+  
+  const btnSkipRest = document.getElementById('btn-skip-rest');
+  if (btnSkipRest) {
+    //btnSkipRest.removeEventListener('click', handleSkipRest);
+    btnSkipRest.addEventListener('click', handleSkipRestV2);
+  }
+  
+  const btnStartSet = document.getElementById('btn-start-set');
+  if (btnStartSet) {
+    //btnStartSet.removeEventListener('click', beginNextSet);
+    btnStartSet.addEventListener('click', () => {
+      Session.startWorkoutTimer();
+      beginNextSetV2();
+    });
+  }
+}
+
+/* ============================================================
    INIT & EVENT BINDINGS
    ============================================================ */
 function init() {
@@ -1712,12 +2770,7 @@ function init() {
   // ---- TRAIN ----
   // 1. Home → Config
   document.getElementById('btn-start-workout').addEventListener('click', () => {
-    Session.reset();
-    document.getElementById('config-name').value = '';
-    document.getElementById('session-timer').textContent = '00:00';
-    renderConfigView();
-    showTrainView('train-config');
-    setTimeout(() => document.getElementById('config-name').focus(), 100);
+    handleWorkoutModeSelection(); // Esto abre el modal de selección
   });
 
   // 2. Config back
@@ -1729,12 +2782,32 @@ function init() {
   document.getElementById('btn-config-continue').addEventListener('click', () => {
     const name = document.getElementById('config-name').value.trim() || 'Entrenamiento';
     Session.workoutName = name;
+    
+    // Aplicar modo compañero
+    applyCompanionSettings();
+    
+    // Mostrar botón de turno si está activo
+    const btnCompanionTurn = document.getElementById('btn-companion-turn');
+    if (btnCompanionTurn) {
+      if (Session.companionMode) {
+        btnCompanionTurn.classList.remove('hidden');
+        btnCompanionTurn.textContent = `⏸ Turno de ${Session.companionName || 'compañero'}`;
+      } else {
+        btnCompanionTurn.classList.add('hidden');
+      }
+    }
+    
     document.getElementById('session-name-display').textContent = name;
     document.getElementById('active-exercise-panel').classList.add('hidden');
     document.getElementById('completed-exercises-list').innerHTML = '';
     showTrainView('train-session');
     openAddExerciseModal();
   });
+
+  const btnSaveTemplateConfig = document.getElementById('btn-save-template-config');
+  if (btnSaveTemplateConfig) {
+    btnSaveTemplateConfig.addEventListener('click', handleSaveTemplateFromConfig);
+  }
 
   // 4. Session back
   document.getElementById('btn-back-session').addEventListener('click', () => {
@@ -1746,10 +2819,10 @@ function init() {
   });
 
   // 5. Finish set
-  document.getElementById('btn-finish-set').addEventListener('click', handleFinishSet);
+  document.getElementById('btn-finish-set').addEventListener('click', handleFinishSetV2);
 
   // 6. Skip rest
-  document.getElementById('btn-skip-rest').addEventListener('click', handleSkipRest);
+  document.getElementById('btn-skip-rest').addEventListener('click', handleSkipRestV2);
 
   // 7. Rest weight controls
   document.getElementById('rest-weight-minus').addEventListener('click', () => {
@@ -1781,7 +2854,7 @@ function init() {
   // 11. Start first set from preview
   document.getElementById('btn-start-set').addEventListener('click', () => {
     Session.startWorkoutTimer();
-    beginNextSet();
+    beginNextSetV2();
   });
 
   // 12. See full exercise explanation
@@ -1829,6 +2902,8 @@ function init() {
   const avatarEl = document.getElementById('header-avatar');
   avatarEl.textContent = user.initials;
   avatarEl.style.background = user.avatarColor;
+
+  initTrainingImprovements();
 }
 
 // Boot
